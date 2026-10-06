@@ -9,6 +9,7 @@ out/
 
 ### TypeScript ###
 *.tsbuildinfo
+next-env.d.ts
 
 ### Env / Secrets — 절대 커밋 금지 ###
 .env
