@@ -41,8 +41,10 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [blocked, setBlocked] = useState<Blocked | null>(null);
-  // 응답이 오기 전에 번호를 바꾸면 이전 번호의 응답은 무시합니다.
-  const latestPhone = useRef("");
+  // 요청마다 번호표를 붙여, 응답이 오기 전에 번호 변경·재발송·초기화가 있었으면
+  // 늦게 온 응답(성공·오류 모두)은 화면에 적용하지 않습니다.
+  const requestId = useRef(0);
+  const busy = sending || verifying;
 
   // 유효한 로그인이 있으면 다시 인증하지 않고 홈으로 보냅니다.
   useEffect(() => {
@@ -66,8 +68,9 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
     session.status === "expired" ? "SESSION_EXPIRED" : notice;
 
   function handlePhoneChange(value: string) {
+    if (busy) return;
     const digits = normalizePhone(value);
-    latestPhone.current = digits;
+    if (digits !== phone) requestId.current += 1;
     setPhone(digits);
     setPhoneError(null);
     // 번호를 바꾸면 이전 인증은 다시 쓰지 않습니다.
@@ -87,12 +90,14 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
       setPhoneError(authErrorMessage("INVALID_PHONE"));
       return;
     }
+    if (busy) return;
     const requested = phone;
+    const id = ++requestId.current;
     setSending(true);
     setPhoneError(null);
     try {
       const res = await requestVerificationCode(requested);
-      if (latestPhone.current !== requested) return;
+      if (id !== requestId.current) return;
       if (res.ok) {
         setSentTo(requested);
         setCode("");
@@ -109,7 +114,9 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
         }
       }
     } catch {
-      setPhoneError(authErrorMessage("SEND_FAILED"));
+      if (id === requestId.current) {
+        setPhoneError(authErrorMessage("SEND_FAILED"));
+      }
     } finally {
       setSending(false);
     }
@@ -117,11 +124,13 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
 
   async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sentTo || code.length !== 6 || codeExpired || locked) return;
+    if (!sentTo || code.length !== 6 || codeExpired || locked || busy) return;
+    const id = requestId.current;
     setVerifying(true);
     setCodeError(null);
     try {
       const res = await verifyCode(sentTo, code);
+      if (id !== requestId.current) return;
       if (res.result === "SIGNED_IN") {
         saveSession(res.profile);
         router.replace(HOME_PATH);
@@ -144,14 +153,16 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
       }
       if (res.code === "CODE_EXPIRED") setExpiresIn(0);
     } catch {
-      setCodeError("연결을 확인한 뒤 다시 시도해 주세요.");
+      if (id === requestId.current) {
+        setCodeError("연결을 확인한 뒤 다시 시도해 주세요.");
+      }
     } finally {
       setVerifying(false);
     }
   }
 
   function resetToStart() {
-    latestPhone.current = "";
+    requestId.current += 1;
     setBlocked(null);
     setPhone("");
     setSentTo(null);
@@ -241,6 +252,7 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
                 placeholder="010-0000-0000"
                 value={formatPhone(phone)}
                 onChange={(e) => handlePhoneChange(e.target.value)}
+                disabled={busy}
                 aria-invalid={phoneError ? true : undefined}
                 aria-describedby={phoneError ? phoneErrorId : undefined}
               />
@@ -249,7 +261,7 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
               type="button"
               className={`${styles.button} ${styles.secondary} ${styles.small}`}
               onClick={handleSend}
-              disabled={sending || cooldown > 0 || phone.length < 10}
+              disabled={busy || cooldown > 0 || phone.length < 10}
             >
               {sending
                 ? "보내는 중…"
@@ -286,7 +298,7 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
                   setCode(normalizeCode(e.target.value));
                   setCodeError(null);
                 }}
-                disabled={locked || codeExpired}
+                disabled={locked || codeExpired || verifying}
                 aria-invalid={codeError || codeExpired ? true : undefined}
                 aria-describedby={codeHelpId}
               />
