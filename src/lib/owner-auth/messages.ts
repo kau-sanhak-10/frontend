@@ -32,7 +32,7 @@ export function authErrorMessage(
 
 export type PanelCopy = { title: string; body: string };
 
-/** 인증 후 업체 화면에 들어갈 수 없을 때 보여줄 안내 */
+/** 업체 화면에 들어갈 수 없을 때 보여줄 안내 */
 export function blockStatusCopy(
   status: AccountBlockStatus,
   rejectReason?: string,
@@ -56,7 +56,7 @@ export function blockStatusCopy(
     case "BUSINESS_UNLINKED":
       return {
         title: "연결된 업체가 없어요.",
-        body: "인증은 완료됐지만 이 계정에 연결된 업체가 없어요. 운영팀이 업체를 연결하면 이용할 수 있어요.",
+        body: "이 번호에 연결된 업체가 없어요. 운영팀이 업체 연결을 확인한 뒤 다시 로그인해 주세요.",
       };
     case "SUSPENDED":
       return {

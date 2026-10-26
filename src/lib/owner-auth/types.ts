@@ -10,7 +10,7 @@ export type AuthErrorCode =
   | "CODE_EXPIRED"
   | "ATTEMPT_LIMIT";
 
-/** 인증은 성공했지만 업체 업무 화면에 들어갈 수 없는 계정 상태 */
+/** 업체 업무 화면에 들어갈 수 없는 계정 상태 */
 export type AccountBlockStatus =
   | "NOT_REGISTERED"
   | "APPROVAL_PENDING"
@@ -32,6 +32,12 @@ export type OwnerProfile = {
 
 export type SendCodeResult =
   | { ok: true; expiresInSec: number; resendAfterSec: number }
+  | {
+      ok: false;
+      result: "BLOCKED";
+      status: AccountBlockStatus;
+      rejectReason?: string;
+    }
   | {
       ok: false;
       code: "INVALID_PHONE" | "SEND_FAILED" | "SEND_LIMIT";

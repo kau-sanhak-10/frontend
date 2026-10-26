@@ -150,7 +150,7 @@ test("발송 실패와 잘못된 번호를 구분한다", async () => {
   assert.equal((await requestVerificationCode("123")).code, "INVALID_PHONE");
 });
 
-test("승인 대기·거절·미연결·이용 제한·미등록 계정은 로그인하지 않는다", async () => {
+test("승인 대기·거절·미연결·이용 제한·미등록 계정에는 인증번호를 발급하지 않는다", async () => {
   const cases = {
     "01033334444": "APPROVAL_PENDING",
     "01055556666": "APPROVAL_REJECTED",
@@ -159,14 +159,18 @@ test("승인 대기·거절·미연결·이용 제한·미등록 계정은 로�
     "01012345678": "NOT_REGISTERED",
   };
   for (const [phone, status] of Object.entries(cases)) {
-    await requestVerificationCode(phone);
-    const res = await verifyCode(phone, MOCK_VERIFICATION_CODE);
+    const res = await requestVerificationCode(phone);
+    assert.equal(res.ok, false, phone);
     assert.equal(res.result, "BLOCKED", phone);
     assert.equal(res.status, status, phone);
+    assert.equal(
+      (await verifyCode(phone, MOCK_VERIFICATION_CODE)).code,
+      "CODE_EXPIRED",
+      phone,
+    );
   }
   now += RESEND_COOLDOWN_SEC * 1000;
-  await requestVerificationCode("01055556666");
-  const rejected = await verifyCode("01055556666", MOCK_VERIFICATION_CODE);
+  const rejected = await requestVerificationCode("01055556666");
   assert.ok(rejected.rejectReason);
 });
 

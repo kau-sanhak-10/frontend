@@ -82,6 +82,18 @@ export async function requestVerificationCode(
   if (!/^01\d{8,9}$/.test(phone)) return { ok: false, code: "INVALID_PHONE" };
   if (phone === SEND_FAIL_PHONE) return { ok: false, code: "SEND_FAILED" };
 
+  const account = accounts[phone];
+  if (!account)
+    return { ok: false, result: "BLOCKED", status: "NOT_REGISTERED" };
+  if (account.status !== "ACTIVE") {
+    return {
+      ok: false,
+      result: "BLOCKED",
+      status: account.status,
+      rejectReason: account.rejectReason,
+    };
+  }
+
   const now = mockConfig.now();
   const lastSentAt = sendHistory.get(phone)?.at(-1);
   if (lastSentAt !== undefined) {
