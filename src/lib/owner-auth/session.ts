@@ -56,13 +56,57 @@ function write(key: string, value: string | null) {
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
+/** setTimeout이 한 번에 기다릴 수 있는 최대 시간(약 24.8일) */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/** 로그인이 유효하면 만료까지 남은 ms, 아니면 null (테스트할 수 있는 순수 함수) */
+export function msUntilExpiry(raw: string | null, now: number): number | null {
+  const state = parseSession(raw, now);
+  return state.status === "active" ? state.session.expiresAt - now : null;
+}
+
 // useSyncExternalStore용 구독·스냅샷
+// 저장소 변경뿐 아니라 ① 만료 시각이 되었을 때 ② 다른 앱·탭에서 돌아왔을 때도
+// 다시 확인해서, 페이지를 켜 둔 채 만료되어도 화면에 반영되게 합니다.
 export function subscribeSession(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  window.addEventListener(CHANGE_EVENT, onChange);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const scheduleExpiryCheck = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    const ms = msUntilExpiry(read(SESSION_KEY), Date.now());
+    if (ms === null) return;
+    timer = setTimeout(
+      () => {
+        onChange();
+        scheduleExpiryCheck();
+      },
+      Math.min(Math.max(ms, 0) + 1, MAX_TIMER_MS),
+    );
+  };
+
+  const recheck = () => {
+    onChange();
+    scheduleExpiryCheck();
+  };
+  const recheckWhenVisible = () => {
+    if (document.visibilityState === "visible") recheck();
+  };
+
+  window.addEventListener("storage", recheck);
+  window.addEventListener(CHANGE_EVENT, recheck);
+  window.addEventListener("focus", recheck);
+  window.addEventListener("pageshow", recheck);
+  document.addEventListener("visibilitychange", recheckWhenVisible);
+  scheduleExpiryCheck();
+
   return () => {
-    window.removeEventListener("storage", onChange);
-    window.removeEventListener(CHANGE_EVENT, onChange);
+    if (timer !== undefined) clearTimeout(timer);
+    window.removeEventListener("storage", recheck);
+    window.removeEventListener(CHANGE_EVENT, recheck);
+    window.removeEventListener("focus", recheck);
+    window.removeEventListener("pageshow", recheck);
+    document.removeEventListener("visibilitychange", recheckWhenVisible);
   };
 }
 
