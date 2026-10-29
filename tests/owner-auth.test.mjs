@@ -15,9 +15,9 @@ import {
 } from "../src/lib/owner-auth/messages.ts";
 import {
   CODE_TTL_SEC,
-  LOCK_SEC,
   MAX_ATTEMPTS,
   MAX_SENDS,
+  MAX_DAILY_SENDS,
   MOCK_VERIFICATION_CODE,
   RESEND_COOLDOWN_SEC,
   mockConfig,
@@ -26,7 +26,7 @@ import {
   resetMockAuth,
   verifyCode,
 } from "../src/lib/owner-auth/mock-api.ts";
-import { parseSession } from "../src/lib/owner-auth/session.ts";
+import { parseSession, SESSION_TTL_MS } from "../src/lib/owner-auth/session.ts";
 
 let now = 1_000_000;
 beforeEach(() => {
@@ -37,6 +37,13 @@ beforeEach(() => {
 });
 
 const ACTIVE = "01011112222";
+
+test("승인한 인증·세션 정책 수치를 사용한다", () => {
+  assert.equal(CODE_TTL_SEC, 300);
+  assert.equal(RESEND_COOLDOWN_SEC, 60);
+  assert.equal(MAX_ATTEMPTS, 5);
+  assert.equal(SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000);
+});
 
 test("휴대전화번호를 숫자만 남기고 형식을 검사한다", () => {
   assert.equal(normalizePhone("010-1234-5678 "), "01012345678");
@@ -80,14 +87,13 @@ test("불일치는 남은 횟수를 알려주고 한도를 넘으면 잠근다",
   for (let i = 2; i < MAX_ATTEMPTS; i += 1) await verifyCode(ACTIVE, "000001");
   const locked = await verifyCode(ACTIVE, "000001");
   assert.equal(locked.code, "ATTEMPT_LIMIT");
-  assert.equal(locked.retryAfterSec, LOCK_SEC);
-  // 잠긴 동안에는 맞는 번호도, 재발송도 막는다
+  assert.equal(locked.retryAfterSec, RESEND_COOLDOWN_SEC);
+  // 기존 코드는 재사용할 수 없고, 재발송은 마지막 발송에서 60초 후 가능하다
   const stillLocked = await verifyCode(ACTIVE, MOCK_VERIFICATION_CODE);
   assert.equal(stillLocked.code, "ATTEMPT_LIMIT");
   now += RESEND_COOLDOWN_SEC * 1000;
   const resend = await requestVerificationCode(ACTIVE);
-  assert.equal(resend.ok, false);
-  assert.equal(resend.code, "SEND_LIMIT");
+  assert.equal(resend.ok, true);
 });
 
 test("유효시간이 지난 인증번호는 만료로 처리한다", async () => {
@@ -109,7 +115,31 @@ test("재발송 대기시간과 발송 횟수를 제한한다", async () => {
   now += RESEND_COOLDOWN_SEC * 1000;
   const limited = await requestVerificationCode(ACTIVE);
   assert.equal(limited.code, "SEND_LIMIT");
-  assert.equal(limited.retryAfterSec, LOCK_SEC);
+  assert.equal(limited.retryAfterSec, 3600 - MAX_SENDS * RESEND_COOLDOWN_SEC);
+});
+
+test("인증 성공 후에도 번호별 최근 24시간 발송 한도는 유지된다", async () => {
+  for (let i = 0; i < MAX_DAILY_SENDS; i += 1) {
+    assert.equal((await requestVerificationCode(ACTIVE)).ok, true);
+    assert.equal(
+      (await verifyCode(ACTIVE, MOCK_VERIFICATION_CODE)).result,
+      "SIGNED_IN",
+    );
+    now += 3_600_000;
+  }
+  const limited = await requestVerificationCode(ACTIVE);
+  assert.equal(limited.ok, false);
+  assert.equal(limited.code, "SEND_LIMIT");
+  now += 86_400_000;
+  assert.equal((await requestVerificationCode(ACTIVE)).ok, true);
+});
+
+test("인증 성공 후에도 재발송 60초 간격을 유지한다", async () => {
+  await requestVerificationCode(ACTIVE);
+  await verifyCode(ACTIVE, MOCK_VERIFICATION_CODE);
+  assert.equal((await requestVerificationCode(ACTIVE)).code, "SEND_LIMIT");
+  now += RESEND_COOLDOWN_SEC * 1000;
+  assert.equal((await requestVerificationCode(ACTIVE)).ok, true);
 });
 
 test("발송 실패와 잘못된 번호를 구분한다", async () => {
@@ -120,7 +150,7 @@ test("발송 실패와 잘못된 번호를 구분한다", async () => {
   assert.equal((await requestVerificationCode("123")).code, "INVALID_PHONE");
 });
 
-test("승인 대기·거절·미연결·이용 제한·미등록 계정은 로그인하지 않는다", async () => {
+test("승인 대기·거절·미연결·이용 제한·미등록 계정에는 인증번호를 발급하지 않는다", async () => {
   const cases = {
     "01033334444": "APPROVAL_PENDING",
     "01055556666": "APPROVAL_REJECTED",
@@ -129,13 +159,18 @@ test("승인 대기·거절·미연결·이용 제한·미등록 계정은 로�
     "01012345678": "NOT_REGISTERED",
   };
   for (const [phone, status] of Object.entries(cases)) {
-    await requestVerificationCode(phone);
-    const res = await verifyCode(phone, MOCK_VERIFICATION_CODE);
+    const res = await requestVerificationCode(phone);
+    assert.equal(res.ok, false, phone);
     assert.equal(res.result, "BLOCKED", phone);
     assert.equal(res.status, status, phone);
+    assert.equal(
+      (await verifyCode(phone, MOCK_VERIFICATION_CODE)).code,
+      "CODE_EXPIRED",
+      phone,
+    );
   }
-  await requestVerificationCode("01055556666");
-  const rejected = await verifyCode("01055556666", MOCK_VERIFICATION_CODE);
+  now += RESEND_COOLDOWN_SEC * 1000;
+  const rejected = await requestVerificationCode("01055556666");
   assert.ok(rejected.rejectReason);
 });
 

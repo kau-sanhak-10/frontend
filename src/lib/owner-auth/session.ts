@@ -6,8 +6,8 @@ const SESSION_KEY = "ilro.owner.mockSession";
 const NAME_KEY = "ilro.owner.mockNames";
 const CHANGE_EVENT = "ilro:owner-session";
 
-/** 로그인 유지 기간. 접수·인증 정책이 확정되면 맞춥니다. (임시 14일) */
-export const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+/** 승인 정책: 로그인 시점부터 최대 7일. 실제 만료·철회는 FE-07 서버 연동에서 검증합니다. */
+export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type OwnerSession = OwnerProfile & { expiresAt: number };
 

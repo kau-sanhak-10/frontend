@@ -19,11 +19,11 @@ import type {
 } from "./types";
 
 export const MOCK_VERIFICATION_CODE = "123456";
-export const CODE_TTL_SEC = 180;
-export const RESEND_COOLDOWN_SEC = 30;
+export const CODE_TTL_SEC = 300;
+export const RESEND_COOLDOWN_SEC = 60;
 export const MAX_SENDS = 5;
+export const MAX_DAILY_SENDS = 10;
 export const MAX_ATTEMPTS = 5;
-export const LOCK_SEC = 600;
 
 const SEND_FAIL_PHONE = "01000000000";
 
@@ -53,12 +53,12 @@ const accounts: Record<string, MockAccount> = {
 type Challenge = {
   expiresAt: number;
   attempts: number;
-  sends: number;
   lastSentAt: number;
-  lockedUntil: number;
 };
 
 const challenges = new Map<string, Challenge>();
+// 화면 실험용 번호별 제한. IP별 제한과 새로고침 이후 보존은 FE-07 서버 연동에서 검사한다.
+const sendHistory = new Map<string, number[]>();
 
 export const mockConfig = {
   /** 응답 지연(ms). 로딩 상태 확인용이며 테스트에서는 0으로 둡니다. */
@@ -82,17 +82,22 @@ export async function requestVerificationCode(
   if (!/^01\d{8,9}$/.test(phone)) return { ok: false, code: "INVALID_PHONE" };
   if (phone === SEND_FAIL_PHONE) return { ok: false, code: "SEND_FAILED" };
 
+  const account = accounts[phone];
+  if (!account)
+    return { ok: false, result: "BLOCKED", status: "NOT_REGISTERED" };
+  if (account.status !== "ACTIVE") {
+    return {
+      ok: false,
+      result: "BLOCKED",
+      status: account.status,
+      rejectReason: account.rejectReason,
+    };
+  }
+
   const now = mockConfig.now();
-  const prev = challenges.get(phone);
-  if (prev) {
-    if (prev.lockedUntil > now) {
-      return {
-        ok: false,
-        code: "SEND_LIMIT",
-        retryAfterSec: secondsUntil(prev.lockedUntil),
-      };
-    }
-    const cooldownEnds = prev.lastSentAt + RESEND_COOLDOWN_SEC * 1000;
+  const lastSentAt = sendHistory.get(phone)?.at(-1);
+  if (lastSentAt !== undefined) {
+    const cooldownEnds = lastSentAt + RESEND_COOLDOWN_SEC * 1000;
     if (cooldownEnds > now) {
       return {
         ok: false,
@@ -100,19 +105,28 @@ export async function requestVerificationCode(
         retryAfterSec: secondsUntil(cooldownEnds),
       };
     }
-    if (prev.sends >= MAX_SENDS) {
-      prev.lockedUntil = now + LOCK_SEC * 1000;
-      prev.sends = 0;
-      return { ok: false, code: "SEND_LIMIT", retryAfterSec: LOCK_SEC };
-    }
   }
+
+  const day = (sendHistory.get(phone) ?? []).filter(
+    (at) => at > now - 86_400_000,
+  );
+  const hour = day.filter((at) => at > now - 3_600_000);
+  const retryAt = Math.max(
+    hour.length >= MAX_SENDS ? hour[0] + 3_600_000 : 0,
+    day.length >= MAX_DAILY_SENDS ? day[0] + 86_400_000 : 0,
+  );
+  if (retryAt > now)
+    return {
+      ok: false,
+      code: "SEND_LIMIT",
+      retryAfterSec: secondsUntil(retryAt),
+    };
+  sendHistory.set(phone, [...day, now]);
 
   challenges.set(phone, {
     expiresAt: now + CODE_TTL_SEC * 1000,
     attempts: 0,
-    sends: (prev?.sends ?? 0) + 1,
     lastSentAt: now,
-    lockedUntil: 0,
   });
   return {
     ok: true,
@@ -130,12 +144,17 @@ export async function verifyCode(
   const now = mockConfig.now();
   const challenge = challenges.get(phone);
   if (!challenge) return { result: "ERROR", code: "CODE_EXPIRED" };
-  // 잠금을 먼저 확인해야 잠긴 동안 "만료"로 잘못 안내하지 않습니다.
-  if (challenge.lockedUntil > now) {
+  // 실패 5회인 코드는 다시 쓰지 못하지만 새 코드 발송은 기존 60초 간격을 따른다.
+  if (challenge.attempts >= MAX_ATTEMPTS) {
     return {
       result: "ERROR",
       code: "ATTEMPT_LIMIT",
-      retryAfterSec: secondsUntil(challenge.lockedUntil),
+      retryAfterSec: Math.max(
+        0,
+        Math.ceil(
+          (challenge.lastSentAt + RESEND_COOLDOWN_SEC * 1000 - now) / 1000,
+        ),
+      ),
     };
   }
   if (challenge.expiresAt <= now) {
@@ -144,12 +163,16 @@ export async function verifyCode(
   if (code !== MOCK_VERIFICATION_CODE) {
     challenge.attempts += 1;
     if (challenge.attempts >= MAX_ATTEMPTS) {
-      challenge.lockedUntil = now + LOCK_SEC * 1000;
       challenge.expiresAt = 0;
       return {
         result: "ERROR",
         code: "ATTEMPT_LIMIT",
-        retryAfterSec: LOCK_SEC,
+        retryAfterSec: Math.max(
+          0,
+          Math.ceil(
+            (challenge.lastSentAt + RESEND_COOLDOWN_SEC * 1000 - now) / 1000,
+          ),
+        ),
       };
     }
     return {
@@ -187,4 +210,5 @@ export async function requestLoginPhoneChange(
 /** 테스트용: 가짜 API 상태를 초기화합니다. */
 export function resetMockAuth() {
   challenges.clear();
+  sendHistory.clear();
 }

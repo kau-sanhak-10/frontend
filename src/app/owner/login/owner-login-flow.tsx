@@ -105,6 +105,8 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
         setLocked(false);
         setExpiresIn(res.expiresInSec);
         setCooldown(res.resendAfterSec);
+      } else if ("status" in res) {
+        setBlocked({ status: res.status, rejectReason: res.rejectReason });
       } else {
         setPhoneError(
           authErrorMessage(res.code, { retryAfterSec: res.retryAfterSec }),
