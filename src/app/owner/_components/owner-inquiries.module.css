@@ -1,0 +1,213 @@
+/* 사장님 접수함·접수 상세 공통 스타일 (피그마 B02·B03 기준) */
+.withTabBar {
+  padding-bottom: 96px;
+}
+
+/* 접수함 탭 */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #e4e4e4;
+}
+
+.tab {
+  flex: 1;
+  min-height: 48px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #56595c;
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: #ff9200;
+  color: #242527;
+  font-weight: 700;
+}
+
+.tab:focus-visible {
+  outline: 3px solid #b35300;
+  outline-offset: -3px;
+}
+
+/* 묶음 */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.groupCount {
+  color: #56595c;
+  font-size: 0.875rem;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 문의 카드 */
+.inquiryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid #e4e4e4;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #242527;
+  text-decoration: none;
+}
+
+.inquiryCard:focus-visible {
+  outline: 3px solid #b35300;
+  outline-offset: 2px;
+}
+
+.attention {
+  border-color: transparent;
+  background: #f7f7f8;
+}
+
+.cardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  font-weight: 700;
+}
+
+.badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f7f7f8;
+  color: #56595c;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badgeAttention {
+  background: #fff7eb;
+  color: #b35300;
+}
+
+.badgeSuccess {
+  background: #e9f6ee;
+  color: #1a7f43;
+}
+
+.cardNote {
+  color: #56595c;
+  font-size: 0.875rem;
+}
+
+.cardMeta {
+  color: #242527;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.unconfirmed {
+  color: #b35300;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.cardTime {
+  color: #8a8d90;
+  font-size: 0.75rem;
+}
+
+/* 불러오는 중 */
+.skeletonCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f7f7f8;
+}
+
+.skeleton {
+  display: block;
+  width: 100%;
+  height: 14px;
+  border-radius: 6px;
+  background: #e9e9eb;
+}
+
+.skeletonShort {
+  width: 40%;
+}
+
+.skeletonMid {
+  width: 70%;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* 아래 탭 */
+.tabBar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid #e4e4e4;
+  background: #ffffff;
+}
+
+.tabBarItem {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 10px;
+  color: #56595c;
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.tabBarItem[aria-current="page"] {
+  background: #f7f7f8;
+  color: #b35300;
+  font-weight: 700;
+}
+
+.tabBarDisabled {
+  color: #b9bbbd;
+}

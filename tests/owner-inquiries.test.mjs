@@ -152,3 +152,20 @@ test("접수 링크는 업체별로 준비 상태를 알려준다", async () => 
   const notIssued = await fetchIntakeLink("biz-teunteun");
   assert.deepEqual(notIssued, { ok: true, data: { status: "NOT_ISSUED" } });
 });
+
+test("접수 시각과 방문 시간을 읽기 쉽게 표시한다", async () => {
+  const { formatReceivedAt, formatVisitRange } =
+    await import("../src/lib/owner-inquiries/format.ts");
+  const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
+  assert.equal(formatReceivedAt(at(20, 9, 42), NOW), "오늘 09:42");
+  assert.equal(formatReceivedAt(at(19, 16, 5), NOW), "어제 16:05");
+  assert.equal(formatReceivedAt(at(17, 14), NOW), "10.17 14:00");
+  assert.equal(
+    formatVisitRange(at(20, 14), at(20, 15), NOW),
+    "오늘 14:00–15:00",
+  );
+  assert.equal(
+    formatVisitRange(at(21, 14), at(21, 15), NOW),
+    "10.21 14:00–15:00",
+  );
+});
