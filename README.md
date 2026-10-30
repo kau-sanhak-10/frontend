@@ -51,10 +51,15 @@ Windows PowerShell에서는 `npm.cmd`, macOS·Linux에서는 `npm`을 사용하�
 npm.cmd run format
 npm.cmd run check
 npm.cmd run build
+npm.cmd run test:smoke
 ```
 
 `check`는 서식·ESLint·TypeScript·API 공통 처리 테스트를 실행합니다.
 `develop`·`main`으로 보내는 PR에서도 GitHub Actions가 검사와 빌드를 실행합니다.
+
+`test:smoke`는 빌드한 초기 화면을 임시 로컬 서버에서 확인하고 서버를 종료합니다.
+고객·사장님·운영 진입과 홈 복귀, 잘못된 경로의 404, 모바일 viewport,
+PWA manifest와 아이콘을 검사합니다. 실제 로그인·예약·HTTPS 설치 검증은 해당 기능 작업에서 진행합니다.
 
 현재 Next.js ESLint 플러그인의 하위 개발 의존성 `braces`에 미해결 보안 경고가 있습니다.
 이 경로는 코드 검사에 사용되며 서비스 런타임 패키지에는 포함되지 않습니다.
