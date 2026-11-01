@@ -109,3 +109,21 @@ export function displayValue(field: SummaryField): string {
   if (field.state === "UNCONFIRMED" || field.value === null) return "미확인";
   return field.value;
 }
+
+const PRODUCT_KEYS: SummaryField["key"][] = [
+  "manufacturer",
+  "model",
+  "errorCode",
+  "expectedCause",
+];
+
+/** 접수 상세(B03)의 '제품 정보'와 '접수 정보'로 요약 항목을 나눕니다. */
+export function splitSummary(fields: SummaryField[]): {
+  product: SummaryField[];
+  intake: SummaryField[];
+} {
+  return {
+    product: fields.filter((f) => PRODUCT_KEYS.includes(f.key)),
+    intake: fields.filter((f) => !PRODUCT_KEYS.includes(f.key)),
+  };
+}

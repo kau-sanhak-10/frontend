@@ -211,3 +211,201 @@
 .tabBarDisabled {
   color: #b9bbbd;
 }
+
+/* 접수 상세 (B03) */
+.detailHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.headerAction {
+  margin-left: auto;
+  padding: 10px 4px;
+  color: #b35300;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.detailTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detailName {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.infoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f7f7f8;
+}
+
+.infoCardTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.productRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fieldList {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr;
+  gap: 2px 12px;
+}
+
+.fieldLabel {
+  color: #56595c;
+  font-size: 0.8125rem;
+}
+
+.fieldValue {
+  margin: 0;
+  font-weight: 700;
+}
+
+.fieldNote {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #56595c;
+  font-size: 0.8125rem;
+}
+
+.interpretTag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid #b35300;
+  border-radius: 6px;
+  color: #b35300;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.evidence summary {
+  color: #b35300;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.evidence p {
+  margin: 4px 0 0;
+}
+
+.photoThumb {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 108px;
+  border-radius: 10px;
+  background: #e9e9eb;
+  color: #8a8d90;
+  font-size: 0.75rem;
+  object-fit: cover;
+}
+
+.quoteBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid #e4e4e4;
+  border-bottom: 1px solid #e4e4e4;
+}
+
+.quoteLabel {
+  margin: 0;
+  color: #56595c;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.quote {
+  margin: 0;
+  color: #242527;
+}
+
+/* 고객과 대화 (B04) */
+.chatStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f7f7f8;
+}
+
+.chatStatus p {
+  margin: 0;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 80%;
+}
+
+.fromCustomer {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.fromUs {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.sender {
+  color: #56595c;
+  font-size: 0.75rem;
+}
+
+.bubble {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #f7f7f8;
+  color: #242527;
+}
+
+.fromCustomer .bubble {
+  background: #fff7eb;
+}
+
+/* 사진 옆 좁은 칸에서는 이름 아래에 값을 둡니다. */
+.productRow .field {
+  grid-template-columns: 1fr;
+}

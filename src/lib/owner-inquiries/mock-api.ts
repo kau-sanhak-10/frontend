@@ -12,6 +12,22 @@ import type {
   LoadResult,
 } from "./types";
 
+/**
+ * 개발 화면 확인용 스위치. 주소 뒤에 붙이면 그 상태를 바로 볼 수 있습니다.
+ * - ?mock=empty : 문의가 하나도 없는 상태 (B17)
+ * - ?mock=fail  : 조회 실패
+ * - ?mock=slow  : 3초 동안 불러오는 중
+ * 개발 서버(npm run dev)에서만 동작하고 배포 화면에서는 무시합니다.
+ */
+export type DevMockMode = "empty" | "fail" | "slow";
+
+function devMockMode(): DevMockMode | null {
+  if (process.env.NODE_ENV === "production") return null;
+  if (typeof window === "undefined") return null;
+  const mode = new URLSearchParams(window.location.search).get("mock");
+  return mode === "empty" || mode === "fail" || mode === "slow" ? mode : null;
+}
+
 export const mockInquiryConfig = {
   /** 응답 지연(ms). 로딩 화면 확인용이며 테스트에서는 0으로 둡니다. */
   delayMs: 400,
@@ -315,9 +331,12 @@ function msg(
 }
 
 function wait() {
-  return new Promise((resolve) =>
-    setTimeout(resolve, mockInquiryConfig.delayMs),
-  );
+  const ms = devMockMode() === "slow" ? 3000 : mockInquiryConfig.delayMs;
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldFail() {
+  return mockInquiryConfig.fail || devMockMode() === "fail";
 }
 
 function toSummary(detail: InquiryDetail): InquirySummary {
@@ -341,7 +360,8 @@ export async function fetchInquiries(
   businessId: string,
 ): Promise<LoadResult<InquirySummary[]>> {
   await wait();
-  if (mockInquiryConfig.fail) return { ok: false, code: "LOAD_FAILED" };
+  if (shouldFail()) return { ok: false, code: "LOAD_FAILED" };
+  if (devMockMode() === "empty") return { ok: true, data: [] };
   const data = buildInquiries()
     .filter((i) => i.businessId === businessId)
     .sort((a, b) => b.receivedAt - a.receivedAt)
@@ -355,7 +375,7 @@ export async function fetchInquiryDetail(
   inquiryId: string,
 ): Promise<LoadResult<InquiryDetail>> {
   await wait();
-  if (mockInquiryConfig.fail) return { ok: false, code: "LOAD_FAILED" };
+  if (shouldFail()) return { ok: false, code: "LOAD_FAILED" };
   const found = buildInquiries().find(
     (i) => i.id === inquiryId && i.businessId === businessId,
   );
@@ -376,7 +396,7 @@ export async function fetchIntakeLink(
   businessId: string,
 ): Promise<LoadResult<IntakeLink>> {
   await wait();
-  if (mockInquiryConfig.fail) return { ok: false, code: "LOAD_FAILED" };
+  if (shouldFail()) return { ok: false, code: "LOAD_FAILED" };
   return {
     ok: true,
     data: INTAKE_LINKS[businessId] ?? { status: "NOT_ISSUED" },

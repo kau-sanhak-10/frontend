@@ -169,3 +169,23 @@ test("접수 시각과 방문 시간을 읽기 쉽게 표시한다", async () =>
     "10.21 14:00–15:00",
   );
 });
+
+test("상세 요약을 제품 정보와 접수 정보로 나눈다", async () => {
+  const { splitSummary } = await import("../src/lib/owner-inquiries/rules.ts");
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  const { product, intake } = splitSummary(res.data.summary);
+  assert.deepEqual(
+    product.map((f) => f.key),
+    ["manufacturer", "errorCode", "model", "expectedCause"],
+  );
+  assert.deepEqual(
+    intake.map((f) => f.key),
+    ["address"],
+  );
+});
+
+test("요약 생성에 실패해도 대화와 사진은 그대로 온다", async () => {
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.ok(res.data.messages.length > 0);
+  assert.ok(res.data.photos.length > 0);
+});
