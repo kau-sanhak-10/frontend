@@ -72,6 +72,11 @@ export function OwnerGate({ screenName, children }: OwnerGateProps) {
   }
 
   return (
-    <>{children({ session: state.session, businessId: state.businessId })}</>
+    <>
+      <p className={styles.previewNotice} role="note">
+        화면 확인용 · 예시 접수와 예약입니다.
+      </p>
+      {children({ session: state.session, businessId: state.businessId })}
+    </>
   );
 }

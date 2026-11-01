@@ -1,4 +1,13 @@
 /* 사장님 인증·계정 화면 공통 스타일 (피그마 일로 Mobile 기준, 390px 모바일 우선) */
+.previewNotice {
+  max-width: 430px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  background: #fff7eb;
+  color: #56595c;
+  font-size: 0.875rem;
+}
+
 .page {
   --primary: #ff9200;
   --primary-deep: #b35300;

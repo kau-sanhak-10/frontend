@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { OwnerGate } from "../../../_components/owner-gate";
+import { OwnerPhoto } from "../../../_components/owner-photo";
 import auth from "../../../_components/owner-auth.module.css";
 import styles from "../../../_components/owner-inquiries.module.css";
 import { DetailError, DetailSkeleton } from "../detail-states";
@@ -99,19 +100,12 @@ function ChatContent({
               className={`${styles.message} ${m.from === "CUSTOMER" ? styles.fromCustomer : styles.fromUs}`}
             >
               <span className={styles.sender}>{SENDER_LABEL[m.from]}</span>
-              {m.text ? (
-                <p className={styles.bubble}>{m.text}</p>
-              ) : photo ? (
-                <div
-                  className={styles.photoThumb}
-                  role="img"
-                  aria-label={photo.alt}
-                >
-                  고객 사진
-                </div>
-              ) : (
+              {m.text ? <p className={styles.bubble}>{m.text}</p> : null}
+              {photo ? (
+                <OwnerPhoto key={photo.url} photo={photo} />
+              ) : m.photoId ? (
                 <p className={styles.bubble}>사진을 불러오지 못했어요.</p>
-              )}
+              ) : null}
               <span className={styles.cardTime}>
                 {formatReceivedAt(m.sentAt, now)}
               </span>

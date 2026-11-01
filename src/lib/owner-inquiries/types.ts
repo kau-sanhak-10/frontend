@@ -107,7 +107,7 @@ export type InquiryDetail = InquirySummary & {
 
 /** 업체 전용 접수 링크 (B-11, QR 제외) */
 export type IntakeLink =
-  | { status: "READY"; url: string; businessName: string }
+  | { status: "READY"; url: string; businessName: string; isExample?: boolean }
   | { status: "NOT_ISSUED" }
   | { status: "ERROR" };
 

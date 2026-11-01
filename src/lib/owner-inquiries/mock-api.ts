@@ -18,9 +18,12 @@ import type {
  * - ?mock=fail  : 조회 실패
  * - ?mock=slow  : 3초 동안 불러오는 중
  * - ?mock=nolink : 운영이 아직 접수 링크를 발급하지 않은 상태 (B16)
+ * - ?mock=summaryfail : 요약 실패 시에도 사진·대화를 조회
+ * - ?mock=photos : 여러 첨부 사진 조회 (같은 예시 자산을 두 번 사용)
  * 개발 서버(npm run dev)에서만 동작하고 배포 화면에서는 무시합니다.
  */
-export type DevMockMode = "empty" | "fail" | "slow" | "nolink";
+export type DevMockMode =
+  "empty" | "fail" | "slow" | "nolink" | "summaryfail" | "photos";
 
 function devMockMode(): DevMockMode | null {
   if (process.env.NODE_ENV === "production") return null;
@@ -29,7 +32,9 @@ function devMockMode(): DevMockMode | null {
   return mode === "empty" ||
     mode === "fail" ||
     mode === "slow" ||
-    mode === "nolink"
+    mode === "nolink" ||
+    mode === "summaryfail" ||
+    mode === "photos"
     ? mode
     : null;
 }
@@ -255,7 +260,13 @@ function buildInquiries(): InquiryDetail[] {
         field("address", "주소", "화정동 ○○아파트 102동", "CUSTOMER", true),
       ],
       summaryUpdatedAt: todayAt(9, 50),
-      photos: [{ id: "p1", url: "", alt: "고객이 보낸 보일러 사진" }],
+      photos: [
+        {
+          id: "p1",
+          url: "/owner/examples/boiler-example.png",
+          alt: "보일러 사진 예시",
+        },
+      ],
       messages: [
         msg(
           "m1",
@@ -385,6 +396,10 @@ export async function fetchInquiryDetail(
   const found = buildInquiries().find(
     (i) => i.id === inquiryId && i.businessId === businessId,
   );
+  if (found && devMockMode() === "summaryfail") found.summaryUpdatedAt = null;
+  if (found?.photos.length && devMockMode() === "photos") {
+    found.photos.push({ ...found.photos[0], id: "p2", alt: "추가 사진 예시" });
+  }
   return found ? { ok: true, data: found } : { ok: false, code: "NOT_FOUND" };
 }
 
@@ -393,6 +408,7 @@ const INTAKE_LINKS: Record<string, IntakeLink> = {
     status: "READY",
     url: "https://ilro.example/r/hanbit",
     businessName: "한빛 보일러",
+    isExample: true,
   },
   [TEUNTEUN]: { status: "NOT_ISSUED" },
 };

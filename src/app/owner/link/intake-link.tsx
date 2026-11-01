@@ -114,16 +114,28 @@ function ReadyLink({ link }: { link: ReadyIntakeLink }) {
           <h3 className={styles.infoCardTitle}>
             {link.businessName} · 고객 문의
           </h3>
-          <p className={auth.cardLabel}>운영팀이 연결한 업체 전용 주소</p>
+          <p className={auth.cardLabel}>
+            {link.isExample
+              ? "화면 확인용 예시 주소"
+              : "운영팀이 연결한 업체 전용 주소"}
+          </p>
         </div>
         <p className={styles.linkUrl}>{link.url}</p>
       </section>
+
+      {link.isExample ? (
+        <p className={auth.info}>
+          예시 링크예요. 실제 문의 링크가 발급되면 복사·공유·고객 화면
+          미리보기를 사용할 수 있어요.
+        </p>
+      ) : null}
 
       <div className={styles.buttonRow}>
         <button
           type="button"
           className={`${auth.button} ${auth.secondary}`}
           onClick={() => void onCopy(link.url)}
+          disabled={link.isExample}
         >
           링크 복사
         </button>
@@ -131,6 +143,7 @@ function ReadyLink({ link }: { link: ReadyIntakeLink }) {
           type="button"
           className={`${auth.button} ${auth.primary}`}
           onClick={() => void onShare(link.url, link.businessName)}
+          disabled={link.isExample}
         >
           링크 공유
         </button>
@@ -143,14 +156,24 @@ function ReadyLink({ link }: { link: ReadyIntakeLink }) {
         {message}
       </p>
 
-      <a
-        href={link.url}
-        target="_blank"
-        rel="noreferrer"
-        className={`${auth.button} ${auth.secondary} ${auth.full} ${styles.plainLink}`}
-      >
-        고객 화면 미리보기
-      </a>
+      {link.isExample ? (
+        <button
+          type="button"
+          className={`${auth.button} ${auth.secondary} ${auth.full}`}
+          disabled
+        >
+          고객 화면 미리보기
+        </button>
+      ) : (
+        <a
+          href={link.url}
+          target="_blank"
+          rel="noreferrer"
+          className={`${auth.button} ${auth.secondary} ${auth.full} ${styles.plainLink}`}
+        >
+          고객 화면 미리보기
+        </a>
+      )}
 
       <p className={auth.hint}>채널 연결과 오류는 운영팀이 관리합니다.</p>
     </>

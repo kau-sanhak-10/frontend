@@ -51,6 +51,9 @@ function OwnerHomeBody({
     <main className={`${auth.page} ${styles.withTabBar}`}>
       <header className={auth.header}>
         <p className={auth.brand}>일로</p>
+        <Link href="/owner/account" className={styles.headerAction}>
+          내 계정
+        </Link>
         <span
           className={styles.headerAction}
           aria-disabled="true"
