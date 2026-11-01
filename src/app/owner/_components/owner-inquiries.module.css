@@ -409,3 +409,61 @@
 .productRow .field {
   grid-template-columns: 1fr;
 }
+
+/* 홈 (B01) */
+.cardLink {
+  align-self: flex-end;
+  padding: 10px 4px 0;
+  color: #b35300;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cardLink:focus-visible {
+  outline: 3px solid #b35300;
+  outline-offset: 2px;
+}
+
+/* 문의 링크 (B16) */
+.linkUrl {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #242527;
+  font-size: 0.9375rem;
+  word-break: break-all;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
+.toast {
+  margin: 0;
+  color: #1a7f43;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.toastError {
+  color: #c62828;
+}
+
+.plainLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.plainLink:focus-visible {
+  outline: 3px solid #b35300;
+  outline-offset: 2px;
+}

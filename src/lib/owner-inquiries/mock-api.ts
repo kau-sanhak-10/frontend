@@ -17,15 +17,21 @@ import type {
  * - ?mock=empty : 문의가 하나도 없는 상태 (B17)
  * - ?mock=fail  : 조회 실패
  * - ?mock=slow  : 3초 동안 불러오는 중
+ * - ?mock=nolink : 운영이 아직 접수 링크를 발급하지 않은 상태 (B16)
  * 개발 서버(npm run dev)에서만 동작하고 배포 화면에서는 무시합니다.
  */
-export type DevMockMode = "empty" | "fail" | "slow";
+export type DevMockMode = "empty" | "fail" | "slow" | "nolink";
 
 function devMockMode(): DevMockMode | null {
   if (process.env.NODE_ENV === "production") return null;
   if (typeof window === "undefined") return null;
   const mode = new URLSearchParams(window.location.search).get("mock");
-  return mode === "empty" || mode === "fail" || mode === "slow" ? mode : null;
+  return mode === "empty" ||
+    mode === "fail" ||
+    mode === "slow" ||
+    mode === "nolink"
+    ? mode
+    : null;
 }
 
 export const mockInquiryConfig = {
@@ -397,6 +403,9 @@ export async function fetchIntakeLink(
 ): Promise<LoadResult<IntakeLink>> {
   await wait();
   if (shouldFail()) return { ok: false, code: "LOAD_FAILED" };
+  if (devMockMode() === "nolink") {
+    return { ok: true, data: { status: "NOT_ISSUED" } };
+  }
   return {
     ok: true,
     data: INTAKE_LINKS[businessId] ?? { status: "NOT_ISSUED" },

@@ -189,3 +189,42 @@ test("요약 생성에 실패해도 대화와 사진은 그대로 온다", async
   assert.ok(res.data.messages.length > 0);
   assert.ok(res.data.photos.length > 0);
 });
+
+test("홈 위쪽 날짜와 방문 동네를 짧게 보인다", async () => {
+  const { formatTodayHeader, areaOf } =
+    await import("../src/lib/owner-inquiries/format.ts");
+  assert.equal(formatTodayHeader(NOW), "10.20 화요일");
+  assert.equal(areaOf("화정동 ○○아파트 102동"), "화정동");
+});
+
+test("공유창이 없으면 복사로, 사장님이 닫으면 오류로 보지 않는다", async () => {
+  const { copyLink, shareLink } =
+    await import("../src/lib/owner-inquiries/share.ts");
+  const url = "https://ilro.example/r/hanbit";
+  let copied = "";
+  const copy = async (text) => {
+    copied = text;
+  };
+
+  assert.equal(await shareLink(url, "한빛 보일러", { copy }), "COPIED");
+  assert.equal(copied, url);
+
+  const share = async () => {};
+  assert.equal(await shareLink(url, "한빛 보일러", { share, copy }), "SHARED");
+
+  const cancel = async () => {
+    const e = new Error("cancel");
+    e.name = "AbortError";
+    throw e;
+  };
+  assert.equal(
+    await shareLink(url, "한빛 보일러", { share: cancel, copy }),
+    "CANCELLED",
+  );
+
+  const broken = async () => {
+    throw new Error("denied");
+  };
+  assert.equal(await copyLink(url, { copy: broken }), "FAILED");
+  assert.equal(await copyLink(url, {}), "FAILED");
+});

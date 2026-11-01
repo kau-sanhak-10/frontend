@@ -46,3 +46,15 @@ export function formatVisitRange(
     : formatMonthDay(startAt);
   return `${day} ${formatClock(startAt)}–${formatClock(endAt)}`;
 }
+
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+
+/** 홈 위쪽 날짜 (예: 10.20 화요일) */
+export function formatTodayHeader(now: number): string {
+  return `${formatMonthDay(now)} ${WEEKDAY[new Date(now).getDay()]}요일`;
+}
+
+/** 주소에서 동 이름만 (예: '화정동 ○○아파트 102동' → '화정동') */
+export function areaOf(address: string): string {
+  return address.split(" ")[0] ?? address;
+}
