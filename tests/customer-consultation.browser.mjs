@@ -56,6 +56,10 @@ try {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
   });
+  // localhost에서는 지원되지만 휴대폰 HTTP에서는 없는 API를 동일하게 재현한다.
+  await context.addInitScript(() => {
+    Object.defineProperty(crypto, "randomUUID", { value: undefined });
+  });
   const page = await context.newPage();
   const externalRequests = [],
     pageErrors = [];

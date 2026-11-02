@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import {
+  createClientId,
   consultationError,
   fieldSources,
   fieldText,
@@ -118,9 +119,10 @@ export default function CustomerConsultation({
           );
           continue;
         }
+        const id = createClientId();
         const url = URL.createObjectURL(file);
         urls.current.add(url);
-        added.push({ id: crypto.randomUUID(), file, url });
+        added.push({ id, file, url });
       }
       setAttachments((current) => [...current, ...added]);
       setError(failures.join("\n"));
@@ -143,8 +145,8 @@ export default function CustomerConsultation({
     busy.current = true;
     setPending(true);
     setError("");
-    draftId.current ??= crypto.randomUUID();
     try {
+      draftId.current ??= createClientId();
       const photoIds: number[] = [];
       // 성공한 사진은 다시 업로드하지 않는다. 메시지만 실패해도 같은 clientMsgId로 재전송한다.
       for (const attachment of attachments) {

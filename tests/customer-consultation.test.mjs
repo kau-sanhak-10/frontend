@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test, afterEach, mock } from "node:test";
 import {
+  createClientId,
   validatePhoto,
   fieldText,
   consultationError,
@@ -15,6 +16,20 @@ afterEach(() => {
   mock.restoreAll();
   if (previousBase === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
   else process.env.NEXT_PUBLIC_API_BASE_URL = previousBase;
+});
+
+test("HTTP 휴대폰 접속처럼 randomUUID가 없어도 고유한 UUID v4를 만든다", () => {
+  const originalCrypto = globalThis.crypto;
+  mock.getter(globalThis, "crypto", () => ({
+    getRandomValues: originalCrypto.getRandomValues.bind(originalCrypto),
+  }));
+  const ids = Array.from({ length: 100 }, () => createClientId());
+  assert.equal(new Set(ids).size, ids.length);
+  for (const id of ids)
+    assert.match(
+      id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
 });
 test("사진은 10장·10,000,000바이트까지이며 JPG·PNG만 허용한다", () => {
   assert.equal(

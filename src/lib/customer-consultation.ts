@@ -1,5 +1,17 @@
 export const photoLimits = { count: 10, bytes: 10_000_000 } as const;
 
+export function createClientId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // 같은 Wi-Fi의 HTTP 미리보기에서도 암호학적 난수로 UUID v4를 만든다.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(
+    "",
+  );
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export type IntakeField = {
   key: string;
   label: string;

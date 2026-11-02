@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import CustomerIntake, { Progress } from "./intake";
 import CustomerConsultation, { FieldList } from "./consultation";
+import { createClientId } from "@/lib/customer-consultation";
 import { emptyVisitInfo, type VisitInfo } from "@/lib/customer-intake";
 import type {
   CustomerMessage,
@@ -305,7 +306,7 @@ export default function ConsultationPreviewFlow({
             setMessages((current) => [
               ...current,
               {
-                id: crypto.randomUUID(),
+                id: createClientId(),
                 role: "SYSTEM",
                 content: "직접 상담 요청이 접수됐을 때 표시하는 화면 예시예요.",
               },
