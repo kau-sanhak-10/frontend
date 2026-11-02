@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { OwnerGate } from "../../_components/owner-gate";
+import { OwnerPhoto } from "../../_components/owner-photo";
 import auth from "../../_components/owner-auth.module.css";
 import styles from "../../_components/owner-inquiries.module.css";
 import { DetailError, DetailSkeleton } from "./detail-states";
@@ -87,6 +88,11 @@ function DetailContent({
   const { product, intake } = splitSummary(inquiry.summary);
   const group = groupOf(inquiry);
   const photoById = new Map(inquiry.photos.map((p) => [p.id, p]));
+  const productVisible =
+    inquiry.summaryUpdatedAt !== null && product.length > 0;
+  const additionalPhotos = productVisible
+    ? inquiry.photos.slice(1)
+    : inquiry.photos;
 
   return (
     <>
@@ -125,7 +131,10 @@ function DetailContent({
             <section className={styles.infoCard}>
               <h3 className={styles.infoCardTitle}>제품 정보</h3>
               <div className={styles.productRow}>
-                <PhotoThumb photo={inquiry.photos[0]} />
+                <OwnerPhoto
+                  key={inquiry.photos[0]?.url}
+                  photo={inquiry.photos[0]}
+                />
                 <dl className={styles.fieldList}>
                   {product.map((f) => (
                     <SummaryRow key={f.key} field={f} photoById={photoById} />
@@ -151,6 +160,19 @@ function DetailContent({
           </p>
         </>
       )}
+
+      {additionalPhotos.length > 0 ? (
+        <section className={styles.infoCard} aria-label="고객 사진">
+          <h3 className={styles.infoCardTitle}>
+            {productVisible ? "추가 사진" : "고객 사진"}
+          </h3>
+          <div className={styles.photoGallery}>
+            {additionalPhotos.map((photo) => (
+              <OwnerPhoto key={`${photo.id}:${photo.url}`} photo={photo} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className={styles.quoteBlock}>
         <h3 className={styles.quoteLabel}>고객 설명</h3>
@@ -269,28 +291,9 @@ function EvidenceText({
     );
   }
   const photo = photoById.get(ev.photoId);
-  return <p>고객 사진: {photo ? photo.alt : "사진을 찾을 수 없어요"}</p>;
-}
-
-function PhotoThumb({ photo }: { photo?: InquiryPhoto }) {
-  if (!photo) {
-    return (
-      <div className={styles.photoThumb} aria-label="사진 없음">
-        사진 없음
-      </div>
-    );
-  }
-  if (!photo.url) {
-    // 목업에는 실제 사진이 없어서 자리만 보여 줍니다.
-    return (
-      <div className={styles.photoThumb} role="img" aria-label={photo.alt}>
-        고객 사진
-      </div>
-    );
-  }
-  return (
-    // 서버가 준 사진 주소를 그대로 씁니다. (외부 주소라 next/image 대신 img)
-    // eslint-disable-next-line @next/next/no-img-element
-    <img className={styles.photoThumb} src={photo.url} alt={photo.alt} />
+  return photo ? (
+    <OwnerPhoto key={photo.url} photo={photo} />
+  ) : (
+    <p>사진을 찾을 수 없어요.</p>
   );
 }

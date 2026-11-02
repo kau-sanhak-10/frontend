@@ -327,6 +327,56 @@
   object-fit: cover;
 }
 
+.photoItem {
+  display: inline-flex;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+.photoLink {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  color: #b35300;
+  font-size: 0.875rem;
+}
+
+.photoLink:focus-visible {
+  outline: 3px solid #b35300;
+  outline-offset: 3px;
+}
+
+.photoGallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.photoFailure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 96px;
+  min-height: 108px;
+  color: #56595c;
+  font-size: 0.875rem;
+}
+
+.photoFailure button {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #242527;
+  font: inherit;
+  cursor: pointer;
+}
+
 .quoteBlock {
   display: flex;
   flex-direction: column;
