@@ -1,6 +1,6 @@
 .shell {
   height: 100dvh;
-  min-height: 100svh;
+  min-height: 0;
 }
 .shell > section {
   min-height: 0;
@@ -277,10 +277,6 @@
   font-size: 13px;
   background: #fff2df;
   color: #704000;
-}
-.previewNotice + .shell {
-  height: calc(100dvh - 56px);
-  min-height: calc(100svh - 56px);
 }
 .srOnly {
   position: absolute;

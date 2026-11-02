@@ -56,6 +56,19 @@ try {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
   });
+  // 키보드가 열릴 때 visualViewport만 줄어드는 실제 휴대폰 조건을 재현한다.
+  await context.addInitScript(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    let height;
+    Object.defineProperty(viewport, "height", {
+      get: () => height ?? window.innerHeight,
+    });
+    window.setKeyboardViewport = (nextHeight) => {
+      height = nextHeight;
+      viewport.dispatchEvent(new Event("resize"));
+    };
+  });
   // localhost에서는 지원되지만 휴대폰 HTTP에서는 없는 API를 동일하게 재현한다.
   await context.addInitScript(() => {
     Object.defineProperty(crypto, "randomUUID", { value: undefined });
@@ -137,6 +150,31 @@ try {
   });
   passed.push(
     "필수 동의→사진 없이 상담→미확인 정보→방문정보→접수 확인, 수정 전 입력 보존",
+  );
+
+  await open("?scene=chat");
+  await page
+    .getByRole("textbox", { name: "메시지", exact: true })
+    .fill("키보드 확인");
+  await page.evaluate(() => window.setKeyboardViewport(420));
+  const composeBounds = await page
+    .getByRole("textbox", { name: "메시지", exact: true })
+    .boundingBox();
+  assert.ok(
+    composeBounds.y >= 0 && composeBounds.y + composeBounds.height <= 420,
+  );
+  const sendBounds = await page
+    .getByRole("button", { name: "메시지 보내기", exact: true })
+    .boundingBox();
+  assert.ok(sendBounds.y >= 0 && sendBounds.y + sendBounds.height <= 420);
+  await send();
+  await page
+    .getByRole("log")
+    .getByText("키보드 확인", { exact: true })
+    .waitFor();
+  await page.evaluate(() => window.setKeyboardViewport(undefined));
+  passed.push(
+    "키보드로 visualViewport만 축소되어도 메시지 입력·전송 버튼이 화면 안에 유지됨",
   );
 
   await open("?scene=retake");

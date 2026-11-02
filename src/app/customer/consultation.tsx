@@ -68,7 +68,27 @@ export default function CustomerConsultation({
   const urls = useRef(new Set<string>());
   const uploaded = useRef(new Map<string, number>());
   const feed = useRef<HTMLDivElement>(null);
+  const shell = useRef<HTMLElement>(null);
   const previousView = useRef(view);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    function fitViewport() {
+      const element = shell.current;
+      if (!element) return;
+      const top = Math.max(0, element.getBoundingClientRect().top);
+      element.style.height = `${Math.max(0, (viewport?.height ?? window.innerHeight) + (viewport?.offsetTop ?? 0) - top)}px`;
+    }
+    fitViewport();
+    viewport?.addEventListener("resize", fitViewport);
+    viewport?.addEventListener("scroll", fitViewport);
+    window.addEventListener("resize", fitViewport);
+    return () => {
+      viewport?.removeEventListener("resize", fitViewport);
+      viewport?.removeEventListener("scroll", fitViewport);
+      window.removeEventListener("resize", fitViewport);
+    };
+  }, []);
 
   useEffect(() => {
     const createdUrls = urls.current;
@@ -225,7 +245,7 @@ export default function CustomerConsultation({
   const photoButtonDisabled = !photoConsent || !onUpload || pending;
   const unsent = Boolean(text.trim() || attachments.length);
   return (
-    <main className={`${base.shell} ${styles.shell}`}>
+    <main ref={shell} className={`${base.shell} ${styles.shell}`}>
       <header className={base.header}>
         <button
           type="button"
