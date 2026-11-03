@@ -1,0 +1,73 @@
+---
+version: 1
+slug: "src-app-customer-consultation-tsx"
+primary_target: "src/app/customer/consultation.tsx"
+related_targets:
+  [
+    "src/app/customer/consultation.module.css",
+    "src/app/customer/preview-flow.tsx",
+  ]
+---
+
+# FE-05 · 고객 상담·사진·접수정보 화면
+
+## 구현 범위
+
+기존 Figma C02(2031:220)·C03(2031:260)·C05(2031:329)를 Next.js·CSS Modules로 연결한다. 흰 배경, Noto Sans KR, 주황 주요 동작, 44px 보조 동작, 52px 주요 동작을 유지한다. 가짜 휴대폰 상태바는 만들지 않는다.
+
+- 고객·덕구·사장님 메시지와 전송 중·실패 상태
+- 사진 동의 확인, JPG/PNG·문의당 10장·장당 10,000,000바이트 제한, 디코딩 실패 안내
+- 첨부 취소·사진별 업로드 실패·재시도, 성공한 사진 재업로드 방지
+- 메시지 재전송 시 같은 clientMsgId 유지, 진행 중 중복 전송 차단
+- 모델명 촬영 가이드, 참고정보 미확인 상태로 계속 진행
+- 항목별 고객 설명·사진 확인·사장님 확인·매뉴얼 해석 및 충돌 구분
+- 직접 상담 요청은 콜백 성공 후에만 상위 연결 화면에서 응대 주체를 변경
+- 방문정보 입력·접수 확인·수정 연결; 입력·사진은 기기 메모리에서만 관리
+
+## 화면 확인
+
+`CUSTOMER_PREVIEW_ENABLED=true` 환경의 `/customer/consultation-preview`. 기본 비활성 상태는 404다. 외부 API·AI·문자·지도·실제 저장을 호출하지 않는다. 상단에 고정 응답·예시 데이터임을 표시한다.
+
+| 옵션                       | 확인 내용                                     |
+| -------------------------- | --------------------------------------------- |
+| 없음                       | FE-03 접속·동의 → 상담 → 방문정보 → 접수 확인 |
+| `?scene=chat`              | 빈 상담 화면                                  |
+| `?scene=retake`            | 피그마 예시 대화·사진·미확인 모델명·촬영 안내 |
+| `?scene=summary`           | 접수 확인 예시                                |
+| `?scene=chat&fail=send`    | 첫 메시지 전송 실패 후 재전송                 |
+| `?scene=chat&fail=upload`  | 첫 사진 업로드 실패 후 재전송                 |
+| `?scene=chat&fail=handoff` | 직접 상담 요청 실패 후 재시도                 |
+| `?scene=chat&fail=expired` | 접근 만료 안내·작성 내용 보존                 |
+
+사진은 실제 파일을 선택해 로컬에서 확인한다. 사진 분석값은 고정된 Figma 예시에만 있으며 임의 첨부 사진에서 분석 결과를 만들어내지 않는다. 복구 인증·예약시간 선택은 FE-20·FE-11의 후속 연결 범위다.
+
+## FE-08 실제 연결 준비
+
+`src/lib/customer-api.ts`는 기존 requestApi를 재사용한다. 명세 v0.3에 요청·응답 예시가 있는 상담 생성·메시지 전송만 구현하고 응답을 검사한다. 프리뷰에서는 호출하지 않는다.
+
+| 연결 지점     | 서버 계약                                                              | 준비 상태                                              |
+| ------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
+| 상담 시작     | POST `/public/intake/{linkToken}/inquiries`, 필수·선택 동의 및 버전    | 요청·응답 검사·테스트 준비                             |
+| 메시지 전송   | POST `/customer/inquiries/{id}/messages`, clientMsgId·content·photoIds | 요청·응답 검사·테스트 준비                             |
+| 사진 업로드   | 업로드 시작 → 저장소 전송 → complete 성공 후 photoId                   | 콜백 준비; 업로드 ticket DTO·허용 헤더 확인 필요       |
+| 상담 갱신     | 메시지 조회·문의 상태·fields, afterId 및 취소 신호                     | 메시지/필드 DTO·권한 만료 응답 확인 후 2초 폴링 연결   |
+| 방문정보 저장 | PUT visit-info, 서버 주소·지역 검증                                    | FE-03 콜백 재사용; 최종 DTO·항목별 오류 매핑 확인 필요 |
+| 직접 상담     | POST handoff-requests                                                  | 콜백 준비; 성공·실패·중복 결과 DTO 확인 필요           |
+
+문의 토큰은 URL·브라우저 저장소에 쓰지 않고 Authorization 헤더로 전달한다. AI 결과의 최신 버전·필수정보·이관 여부는 Spring이 검증한다. 프론트가 임의의 메시지 내용이나 모델명 누락만으로 예약 가능·이관 상태를 결정하지 않는다.
+
+실제 연결 검증은 BE-04/05/06/08과 서비스용 FastAPI 경로 준비 후 진행한다. UI·목업 검사와 실제 고객 접수 저장 완료는 구분한다.
+
+## Direction contract
+
+THESIS: 고객이 사진과 짧은 설명을 보내고 필요한 항목만 확인하는 기존 고객 흐름을 확장한다. 새 대시보드나 장식 카드를 만들지 않는다.
+
+OWN-WORLD: 기존 흰 바탕·회색 대화 말풍선·주황 주요 동작·Noto Sans KR·44/52px 동작과 로컬 Figma 자산을 유지한다.
+
+STORY: 증상 설명 → 필요한 경우 사진 보완 → 출처가 구분된 접수 정보 → 방문정보 확인. 사진·모델명은 보편 필수가 아니다.
+
+FIRST VIEWPORT: 390px 모바일, 상단 56px 제목·접수 버튼, 중앙 대화, 하단 첨부·메시지 입력. 촬영 가이드는 그림과 라벨 예시를 나란히 놓고 주요 동작을 하단에 둔다.
+
+FORM: 사용자 기존 Figma 지정 구성의 기능 확장. 컨셉 추첨·새 시안 생성 없이 C02/C03/C05를 기준으로 한다. 고정 대화·사진은 확인용으로 표시한다.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

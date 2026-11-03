@@ -72,6 +72,14 @@ try {
   assert.equal((await fetch(`${base}/unknown-role`)).status, 404);
   assert.equal((await fetch(`${base}/customer/preview`)).status, 404);
   assert.equal(
+    (await fetch(`${base}/customer/consultation-preview`)).status,
+    404,
+  );
+  assert.equal(
+    (await fetch(`${base}/customer/consultation-preview?scene=chat`)).status,
+    404,
+  );
+  assert.equal(
     (await fetch(`${base}/customer/preview?state=ready`)).status,
     404,
   );
