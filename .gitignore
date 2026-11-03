@@ -27,6 +27,7 @@ yarn-debug.*
 yarn-error.*
 *.log
 logs/
+.impeccable/review/
 
 ### IDE ###
 .idea/
