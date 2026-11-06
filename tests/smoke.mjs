@@ -51,7 +51,6 @@ try {
   assert.match(home, /href="\/manifest.webmanifest"/);
   for (const [role, title] of Object.entries({
     customer: "고객 문의",
-    owner: "사장님 관리",
     admin: "운영 관리",
   })) {
     assert.ok(home.includes(`href="/${role}"`), `${role} 진입 링크 누락`);
@@ -69,6 +68,14 @@ try {
       "미구현 기능을 제공 중으로 표시함",
     );
   }
+  // 사장님 홈은 FE-06에서 실제 화면으로 바뀌어 미구현 문구 대신 화면 진입만 확인한다.
+  assert.ok(home.includes('href="/owner"'), "owner 진입 링크 누락");
+  const ownerResponse = await fetch(`${base}/owner`);
+  assert.equal(ownerResponse.status, 200);
+  assert.ok(
+    (await ownerResponse.text()).includes("<title>오늘 | 일로</title>"),
+    "owner 홈 화면 구분 실패",
+  );
   assert.equal((await fetch(`${base}/unknown-role`)).status, 404);
   assert.equal((await fetch(`${base}/customer/preview`)).status, 404);
   assert.equal(
