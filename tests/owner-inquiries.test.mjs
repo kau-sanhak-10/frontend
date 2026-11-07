@@ -1,0 +1,230 @@
+import assert from "node:assert/strict";
+import { beforeEach, test } from "node:test";
+import {
+  countByTab,
+  displayValue,
+  filterByTab,
+  groupOf,
+  needsOwnerCheck,
+  onlyBusiness,
+  todayVisits,
+} from "../src/lib/owner-inquiries/rules.ts";
+import {
+  fetchInquiries,
+  fetchInquiryDetail,
+  fetchIntakeLink,
+  mockBusinessIdOf,
+  mockInquiryConfig,
+} from "../src/lib/owner-inquiries/mock-api.ts";
+
+// 10.20 오전 11시를 '지금'으로 고정합니다.
+const NOW = new Date(2026, 9, 20, 11, 0).getTime();
+const HANBIT = mockBusinessIdOf("01011112222");
+
+beforeEach(() => {
+  mockInquiryConfig.delayMs = 0;
+  mockInquiryConfig.fail = false;
+  mockInquiryConfig.now = () => NOW;
+});
+
+async function hanbitInquiries() {
+  const res = await fetchInquiries(HANBIT);
+  assert.equal(res.ok, true);
+  return res.data;
+}
+
+test("로그인 번호로 목업 업체를 찾는다", () => {
+  assert.equal(HANBIT, "biz-hanbit");
+  assert.equal(mockBusinessIdOf("01099998888"), null);
+});
+
+test("다른 업체 문의는 목록과 상세에 나오지 않는다", async () => {
+  const list = await hanbitInquiries();
+  assert.ok(list.every((i) => i.businessId === HANBIT));
+  assert.ok(!list.some((i) => i.id === "inq-901"));
+
+  const other = await fetchInquiryDetail(HANBIT, "inq-901");
+  assert.deepEqual(other, { ok: false, code: "NOT_FOUND" });
+
+  const mixed = [...list, { ...list[0], id: "x", businessId: "biz-other" }];
+  assert.equal(onlyBusiness(mixed, HANBIT).length, list.length);
+});
+
+test("참고정보만 미확인인 문의는 확인 필요로 세지 않는다", async () => {
+  const list = await hanbitInquiries();
+  const modelUnknown = list.find((i) => i.id === "inq-106");
+  assert.deepEqual(modelUnknown.unconfirmedLabels, ["모델명"]);
+  assert.equal(needsOwnerCheck(modelUnknown), false);
+  assert.equal(groupOf(modelUnknown), "RESERVED");
+});
+
+test("확인 필요는 서버가 사유와 함께 준 문의만 센다", () => {
+  const base = {
+    id: "a",
+    businessId: HANBIT,
+    customerLabel: "고객",
+    title: "제목",
+    receivedAt: NOW,
+    note: "",
+    unconfirmedLabels: [],
+  };
+  assert.equal(
+    needsOwnerCheck({
+      ...base,
+      status: "OWNER_CHECK",
+      ownerCheckReason: "SAFETY",
+    }),
+    true,
+  );
+  // 사유가 없는 OWNER_CHECK는 잘못된 값이라 확인 필요로 보지 않는다.
+  const noReason = { ...base, status: "OWNER_CHECK" };
+  assert.equal(needsOwnerCheck(noReason), false);
+  assert.equal(groupOf(noReason), "AI_INTAKE");
+});
+
+test("홈 건수와 접수함 탭 건수가 같은 기준이다", async () => {
+  const list = await hanbitInquiries();
+  const counts = countByTab(list);
+  assert.deepEqual(counts, { ALL: 7, OWNER_CHECK: 2, IN_PROGRESS: 3 });
+  assert.equal(filterByTab(list, "OWNER_CHECK").length, counts.OWNER_CHECK);
+  assert.ok(filterByTab(list, "OWNER_CHECK").every(needsOwnerCheck));
+  // 처리 완료와 예약 확정은 '처리 중' 탭에 들어가지 않는다.
+  const inProgress = filterByTab(list, "IN_PROGRESS").map((i) => i.status);
+  assert.ok(!inProgress.includes("COMPLETED"));
+  assert.ok(!inProgress.includes("RESERVED"));
+});
+
+test("목록은 최근 접수가 위로 온다", async () => {
+  const list = await hanbitInquiries();
+  for (let i = 1; i < list.length; i += 1) {
+    assert.ok(list[i - 1].receivedAt >= list[i].receivedAt);
+  }
+});
+
+test("오늘 방문은 시작 시각 순이고 처리 완료는 빠진다", async () => {
+  const list = await hanbitInquiries();
+  const visits = todayVisits(list, NOW);
+  assert.deepEqual(
+    visits.map((v) => v.id),
+    ["inq-106", "inq-101"],
+  );
+});
+
+test("조회 실패를 0건으로 바꾸지 않는다", async () => {
+  mockInquiryConfig.fail = true;
+  assert.deepEqual(await fetchInquiries(HANBIT), {
+    ok: false,
+    code: "LOAD_FAILED",
+  });
+  assert.deepEqual(await fetchInquiryDetail(HANBIT, "inq-106"), {
+    ok: false,
+    code: "LOAD_FAILED",
+  });
+  assert.deepEqual(await fetchIntakeLink(HANBIT), {
+    ok: false,
+    code: "LOAD_FAILED",
+  });
+});
+
+test("요약은 출처를 구분하고 읽지 못한 값은 미확인으로 보인다", async () => {
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.equal(res.ok, true);
+  const byKey = Object.fromEntries(res.data.summary.map((f) => [f.key, f]));
+
+  assert.equal(byKey.model.state, "UNCONFIRMED");
+  assert.equal(displayValue(byKey.model), "미확인");
+  assert.ok(byKey.model.reason);
+
+  // 매뉴얼 해석은 확인된 사실로 표시하지 않는다.
+  assert.equal(byKey.expectedCause.source, "MANUAL");
+  assert.equal(byKey.expectedCause.state, "INTERPRETATION");
+  assert.equal(byKey.expectedCause.evidence.type, "MANUAL");
+
+  assert.equal(byKey.errorCode.source, "PHOTO");
+  assert.equal(byKey.errorCode.state, "CONFIRMED");
+});
+
+test("접수 링크는 업체별로 준비 상태를 알려준다", async () => {
+  const ready = await fetchIntakeLink(HANBIT);
+  assert.equal(ready.ok, true);
+  assert.equal(ready.data.status, "READY");
+
+  const notIssued = await fetchIntakeLink("biz-teunteun");
+  assert.deepEqual(notIssued, { ok: true, data: { status: "NOT_ISSUED" } });
+});
+
+test("접수 시각과 방문 시간을 읽기 쉽게 표시한다", async () => {
+  const { formatReceivedAt, formatVisitRange } =
+    await import("../src/lib/owner-inquiries/format.ts");
+  const at = (d, h, m = 0) => new Date(2026, 9, d, h, m).getTime();
+  assert.equal(formatReceivedAt(at(20, 9, 42), NOW), "오늘 09:42");
+  assert.equal(formatReceivedAt(at(19, 16, 5), NOW), "어제 16:05");
+  assert.equal(formatReceivedAt(at(17, 14), NOW), "10.17 14:00");
+  assert.equal(
+    formatVisitRange(at(20, 14), at(20, 15), NOW),
+    "오늘 14:00–15:00",
+  );
+  assert.equal(
+    formatVisitRange(at(21, 14), at(21, 15), NOW),
+    "10.21 14:00–15:00",
+  );
+});
+
+test("상세 요약을 제품 정보와 접수 정보로 나눈다", async () => {
+  const { splitSummary } = await import("../src/lib/owner-inquiries/rules.ts");
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  const { product, intake } = splitSummary(res.data.summary);
+  assert.deepEqual(
+    product.map((f) => f.key),
+    ["manufacturer", "errorCode", "model", "expectedCause"],
+  );
+  assert.deepEqual(
+    intake.map((f) => f.key),
+    ["address"],
+  );
+});
+
+test("요약 생성에 실패해도 대화와 사진은 그대로 온다", async () => {
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.ok(res.data.messages.length > 0);
+  assert.ok(res.data.photos.length > 0);
+});
+
+test("홈 위쪽 날짜와 방문 동네를 짧게 보인다", async () => {
+  const { formatTodayHeader, areaOf } =
+    await import("../src/lib/owner-inquiries/format.ts");
+  assert.equal(formatTodayHeader(NOW), "10.20 화요일");
+  assert.equal(areaOf("화정동 ○○아파트 102동"), "화정동");
+});
+
+test("공유창이 없으면 복사로, 사장님이 닫으면 오류로 보지 않는다", async () => {
+  const { copyLink, shareLink } =
+    await import("../src/lib/owner-inquiries/share.ts");
+  const url = "https://ilro.example/r/hanbit";
+  let copied = "";
+  const copy = async (text) => {
+    copied = text;
+  };
+
+  assert.equal(await shareLink(url, "한빛 보일러", { copy }), "COPIED");
+  assert.equal(copied, url);
+
+  const share = async () => {};
+  assert.equal(await shareLink(url, "한빛 보일러", { share, copy }), "SHARED");
+
+  const cancel = async () => {
+    const e = new Error("cancel");
+    e.name = "AbortError";
+    throw e;
+  };
+  assert.equal(
+    await shareLink(url, "한빛 보일러", { share: cancel, copy }),
+    "CANCELLED",
+  );
+
+  const broken = async () => {
+    throw new Error("denied");
+  };
+  assert.equal(await copyLink(url, { copy: broken }), "FAILED");
+  assert.equal(await copyLink(url, {}), "FAILED");
+});
