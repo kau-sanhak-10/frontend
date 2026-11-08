@@ -2,10 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 const roles: Record<string, { title: string; description: string }> = {
-  owner: {
-    title: "사장님 관리",
-    description: "접수 확인·확인 요청 처리·방문 예약 관리",
-  },
   admin: { title: "운영 관리", description: "업체·접수 채널·업무 규칙 관리" },
 };
 
