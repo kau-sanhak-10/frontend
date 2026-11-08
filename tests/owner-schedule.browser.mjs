@@ -1,0 +1,179 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const base = process.env.OWNER_QA_BASE_URL || "http://127.0.0.1:3112";
+assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
+const { chromium } = await import(
+  process.env.PLAYWRIGHT_MODULE_PATH
+    ? pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href
+    : "playwright"
+);
+const browser = await chromium.launch({
+  headless: true,
+  executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH,
+});
+const output = path.resolve(".next/owner-schedule-qa");
+try {
+  const page = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    timezoneId: "Asia/Seoul",
+  });
+  await page.clock.setFixedTime(new Date("2026-11-11T02:00:00Z"));
+  await page.route("**/*", (route) =>
+    route.request().url().startsWith(base) ? route.continue() : route.abort(),
+  );
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`${base}/owner/schedule`);
+  await page.getByRole("heading", { name: "로그인이 필요해요." }).waitFor();
+  await page.getByRole("link", { name: "로그인하러 가기" }).click();
+  await page.getByLabel("휴대전화번호", { exact: true }).fill("01011112222");
+  await page.getByRole("button", { name: "인증번호 받기" }).click();
+  await page.getByLabel("문자 인증번호").fill("123456");
+  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await page.getByRole("link", { name: "일정", exact: true }).click();
+  const daily = page.getByRole("region", { name: "날짜별 일정" });
+  await daily.waitFor();
+  const weekdays = daily.getByRole("button", { name: /월 \d+일/ });
+  assert.equal(
+    await weekdays.first().getAttribute("aria-label"),
+    "11월 9일 월요일",
+  );
+  assert.equal(
+    await daily
+      .getByRole("button", { name: "11월 11일 수요일" })
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+  await page.getByText(/이전 현장에서 약 25분/).waitFor();
+  const capture = (file) =>
+    page.screenshot({
+      path: path.join(output, file),
+      fullPage: true,
+      style: "nextjs-portal { display: none !important; }",
+    });
+  await capture("mobile.png");
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+    );
+    if (width === 1280) {
+      await capture("desktop.png");
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: /10:00.*작업 완료/ }).press("Enter");
+  await page.waitForFunction(
+    () => document.activeElement?.textContent === "방문 정보",
+  );
+  await page.getByRole("button", { name: "완료 기록 정정" }).click();
+  await page.getByRole("button", { name: "정정 사유 저장" }).click();
+  await page
+    .getByRole("alert")
+    .getByText(/사유를 입력/)
+    .waitFor();
+  await page.getByLabel("사유", { exact: true }).fill("작업 기록 보완");
+  await page.getByRole("button", { name: "정정 사유 저장" }).click();
+  await page
+    .getByRole("status")
+    .getByText(/정정 사유를 기록/)
+    .waitFor();
+  await page.waitForFunction(
+    () => document.activeElement?.textContent === "일정",
+  );
+
+  await page.getByRole("button", { name: /16:00.*변경 요청/ }).click();
+  await page.getByRole("button", { name: "변경 시간 제안" }).click();
+  await page.getByLabel("날짜").fill("2026-11-12");
+  await page.getByLabel("시작 시간").fill("14:00");
+  await page.getByLabel("사유", { exact: true }).fill("고객 요청");
+  await page.getByRole("button", { name: "변경 제안 미리보기" }).click();
+  await page
+    .getByRole("status")
+    .getByText(/기존 예약은 그대로/)
+    .waitFor();
+  await page
+    .getByRole("button", { name: /16:00.*변경 제안.*예약 유지/ })
+    .waitFor();
+
+  await page.getByRole("button", { name: "일정 추가" }).click();
+  await page.getByRole("button", { name: "시간 비우기" }).click();
+  await page.getByLabel("시작 시간").fill("14:00");
+  await page.getByLabel("종료 시간").fill("13:00");
+  await page.getByRole("button", { name: "차단 시간 저장" }).click();
+  await page
+    .getByRole("alert")
+    .getByText(/종료 시간은 시작 시간보다/)
+    .waitFor();
+  await page.getByLabel("종료 시간").fill("15:00");
+  await page.getByRole("button", { name: "차단 시간 저장" }).click();
+  await page
+    .getByRole("alert")
+    .getByText(/기존 일정/)
+    .waitFor();
+  await page.getByRole("button", { name: "일정으로 돌아가기" }).click();
+
+  await daily.getByRole("button", { name: "11월 12일 목요일" }).click();
+  await page.getByRole("heading", { name: "잡힌 일정이 없어요." }).waitFor();
+  await page.getByRole("button", { name: "일정 추가" }).click();
+  await page.getByLabel("고객 이름").fill("테스트");
+  await page.getByLabel("연락처").fill("01000000000");
+  await page.getByLabel("방문 주소").fill("테스트 주소");
+  await page.getByLabel("시작 시간").fill("19:00");
+  assert.equal(await page.getByLabel("작업시간(분)").inputValue(), "60");
+  await page.getByRole("button", { name: "예약 저장 미리보기" }).click();
+  await page
+    .getByRole("alert")
+    .getByText(/영업시간/)
+    .waitFor();
+  await page.getByLabel("영업시간 밖인 것을 확인했어요.").check();
+  await page.getByRole("button", { name: "예약 저장 미리보기" }).click();
+  await page
+    .getByRole("status")
+    .getByText(/실제 예약은 생성되지 않았어요/)
+    .waitFor();
+  await page.getByRole("button", { name: /19:00.*테스트/ }).click();
+  await page.getByRole("button", { name: "예약 취소", exact: true }).click();
+  await page.getByRole("button", { name: "예약 취소 미리보기" }).click();
+  await page
+    .getByRole("alert")
+    .getByText(/사유를 입력/)
+    .waitFor();
+  await page.getByLabel("사유", { exact: true }).fill("고객 요청");
+  await page.getByRole("button", { name: "예약 취소 미리보기" }).click();
+  await page
+    .getByRole("status")
+    .getByText(/알림은 보내지 않았어요/)
+    .waitFor();
+  await page.getByRole("button", { name: "일정 추가" }).click();
+  await page.getByRole("button", { name: "시간 비우기" }).click();
+  await page.getByLabel("시작 시간").fill("19:00");
+  await page.getByLabel("종료 시간").fill("20:00");
+  await page.getByRole("button", { name: "차단 시간 저장" }).click();
+  await page
+    .getByRole("status")
+    .getByText(/차단 시간을 추가/)
+    .waitFor();
+  await page.getByRole("button", { name: /19:00.*개인 일정/ }).click();
+  await page.getByRole("button", { name: "차단 시간 해제" }).click();
+  await page
+    .getByRole("status")
+    .getByText(/차단 시간을 해제/)
+    .waitFor();
+
+  await page.goto(`${base}/owner/schedule?mock=fail`);
+  await page
+    .getByRole("heading", { name: "일정을 불러오지 못했어요." })
+    .waitFor();
+  assert.deepEqual(errors, []);
+  console.log(
+    "PASS: 일정 권한, 시간 충돌, 빈 일정·조회 실패, 영업시간 밖 확인, 기존 예약 유지, 취소·정정 사유, 차단·해제, 320·390·1280px",
+  );
+} finally {
+  await browser.close();
+}

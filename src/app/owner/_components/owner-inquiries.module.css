@@ -208,6 +208,12 @@
   font-weight: 700;
 }
 
+.tabBarItem:has(img) {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 54px;
+}
+
 .tabBarDisabled {
   color: #b9bbbd;
 }
