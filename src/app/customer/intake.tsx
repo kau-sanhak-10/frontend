@@ -20,6 +20,8 @@ type Props = {
   business: IntakeBusiness;
   status?: IntakeStatus;
   initialStep?: "entry" | "visit";
+  initialVisit?: VisitInfo;
+  onBackToChat?: (input: VisitInfo) => void;
   onStart?: (input: {
     consents: { type: "PRIVACY_REQUIRED" | "PHOTO"; termsVersion: string }[];
   }) => Promise<void>;
@@ -35,6 +37,8 @@ export default function CustomerIntake({
   business,
   status = "ready",
   initialStep = "entry",
+  initialVisit = emptyVisitInfo,
+  onBackToChat,
   onStart,
   onSaveVisit,
   onRetry,
@@ -46,7 +50,7 @@ export default function CustomerIntake({
   const [privacy, setPrivacy] = useState(false);
   const [photo, setPhoto] = useState(false);
   const [consentError, setConsentError] = useState("");
-  const [visit, setVisit] = useState<VisitInfo>({ ...emptyVisitInfo });
+  const [visit, setVisit] = useState<VisitInfo>({ ...initialVisit });
   const [errors, setErrors] = useState<VisitErrors>({});
   const [requestError, setRequestError] = useState("");
   const [pending, setPending] = useState(false);
@@ -244,7 +248,11 @@ export default function CustomerIntake({
             type="button"
             disabled={pending}
             aria-label="이전 화면"
-            onClick={() => move(back as Step)}
+            onClick={() =>
+              step === "visit" && onBackToChat
+                ? onBackToChat(visit)
+                : move(back as Step)
+            }
           >
             <Image src="/customer/back.svg" alt="" width={22} height={22} />
           </button>
@@ -609,7 +617,7 @@ export default function CustomerIntake({
   );
 }
 
-function Progress({ current }: { current: 1 | 2 }) {
+export function Progress({ current }: { current: 1 | 2 }) {
   return (
     <ol className={styles.progress} aria-label="접수 단계">
       {["사진·증상", "방문 정보", "방문시간"].map((label, i) => (
