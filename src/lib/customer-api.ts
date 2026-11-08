@@ -1,7 +1,117 @@
 import { requestApi } from "./api.ts";
-import type { SendCustomerInput } from "./customer-consultation.ts";
+import type {
+  CustomerMessage,
+  SendCustomerInput,
+} from "./customer-consultation.ts";
+import type { IntakeBusiness } from "./customer-intake.ts";
 
-// API 명세 v0.3에서 요청·응답 예시가 확정된 두 경로만 준비한다. 프리뷰에서는 호출하지 않는다.
+const categoryNames: Record<string, string> = {
+  INSPECTION: "점검",
+  REPAIR: "수리·부품교체",
+  LEAK: "누수",
+  REPLACEMENT: "보일러 교체",
+};
+
+type IntakeResponse = {
+  businessName: string;
+  contactPhone: string;
+  customerNotice: string | null;
+  serviceDescription: string | null;
+  workCategories: string[];
+  intakeAvailable: boolean;
+  termsVersion: string;
+};
+
+export function isIntakeLinkToken(token: string) {
+  return /^[A-Za-z0-9_-]{43}$/.test(token);
+}
+
+export async function getCustomerIntake(
+  linkToken: string,
+  signal?: AbortSignal,
+) {
+  if (!isIntakeLinkToken(linkToken)) throw new Error("Invalid intake link");
+  const value = await requestApi<IntakeResponse>(
+    `/api/v1/public/intake/${encodeURIComponent(linkToken)}`,
+    { signal },
+  );
+  if (
+    !value ||
+    typeof value.businessName !== "string" ||
+    !value.businessName.trim() ||
+    typeof value.contactPhone !== "string" ||
+    typeof value.intakeAvailable !== "boolean" ||
+    typeof value.termsVersion !== "string" ||
+    !value.termsVersion.trim() ||
+    !Array.isArray(value.workCategories)
+  )
+    throw new Error("Invalid intake response");
+
+  const business: IntakeBusiness = {
+    name: value.businessName,
+    phone: value.contactPhone,
+    guidance: [value.customerNotice, value.serviceDescription]
+      .filter((item) => typeof item === "string" && item.trim())
+      .join(" · "),
+    termsVersion: value.termsVersion,
+    workTypes: value.workCategories
+      .filter(
+        (id) => typeof id === "string" && Object.hasOwn(categoryNames, id),
+      )
+      .map((id) => ({ id, name: categoryNames[id] })),
+  };
+  return { business, available: value.intakeAvailable };
+}
+
+export async function getCustomerMessages(
+  inquiryId: number,
+  token: string,
+  afterId: number,
+  signal: AbortSignal,
+) {
+  const suffix = afterId ? `?afterId=${afterId}` : "";
+  const value = await requestApi<{
+    messages: {
+      messageId: number;
+      sender: CustomerMessage["role"];
+      content: string | null;
+      deliveryStatus: string;
+    }[];
+    hasMore: boolean;
+  }>(`/api/v1/customer/inquiries/${inquiryId}/messages${suffix}`, {
+    signal,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (
+    !value ||
+    !Array.isArray(value.messages) ||
+    typeof value.hasMore !== "boolean"
+  )
+    throw new Error("Invalid messages response");
+  const messages: CustomerMessage[] = [];
+  let cursor = afterId;
+  for (const row of value.messages) {
+    if (!row || !Number.isSafeInteger(row.messageId) || row.messageId <= cursor)
+      throw new Error("Invalid message order");
+    // A pending message can later become SENT; don't advance past it.
+    if (row.deliveryStatus === "PENDING")
+      return { messages, cursor, hasMore: false };
+    cursor = row.messageId;
+    if (
+      row.deliveryStatus === "SENT" &&
+      ["CUSTOMER", "AI", "OWNER"].includes(row.sender) &&
+      typeof row.content === "string" &&
+      row.content.trim()
+    )
+      messages.push({
+        id: String(row.messageId),
+        role: row.sender,
+        content: row.content,
+      });
+  }
+  return { messages, cursor, hasMore: value.hasMore && cursor > afterId };
+}
+
 export async function createCustomerInquiry(
   linkToken: string,
   consents: {
@@ -34,7 +144,7 @@ export async function createCustomerInquiry(
     (value.inquiryId as number) <= 0 ||
     !("inquiryToken" in value) ||
     typeof value.inquiryToken !== "string" ||
-    !value.inquiryToken.trim() ||
+    !/^inq_[A-Za-z0-9_-]+$/.test(value.inquiryToken) ||
     !("expiresAt" in value) ||
     typeof value.expiresAt !== "string" ||
     !Number.isFinite(Date.parse(value.expiresAt))
