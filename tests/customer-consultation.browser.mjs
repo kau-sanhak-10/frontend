@@ -72,6 +72,13 @@ try {
   // localhost에서는 지원되지만 휴대폰 HTTP에서는 없는 API를 동일하게 재현한다.
   await context.addInitScript(() => {
     Object.defineProperty(crypto, "randomUUID", { value: undefined });
+    const getRandomValues = crypto.getRandomValues.bind(crypto);
+    window.uuidCount = 0;
+    crypto.getRandomValues = (bytes) => {
+      if (bytes instanceof Uint8Array && bytes.length === 16)
+        window.uuidCount++;
+      return getRandomValues(bytes);
+    };
   });
   const page = await context.newPage();
   const externalRequests = [],
@@ -222,11 +229,26 @@ try {
     path: path.join(output, "mobile-send-failure.png"),
     fullPage: true,
   });
+  const uuidCount = await page.evaluate(() => window.uuidCount);
+  await page.getByLabel("사진 파일 선택").setInputFiles({
+    name: "unsupported.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("not a photo"),
+  });
+  await page
+    .getByRole("alert")
+    .getByText(/JPG·PNG 사진을 선택/)
+    .waitFor();
   await send();
   await page
     .getByRole("log")
     .getByText("사진 전송 테스트", { exact: true })
     .waitFor();
+  assert.equal(
+    await page.evaluate(() => window.uuidCount),
+    uuidCount,
+    "유효하지 않은 첨부만 선택한 뒤에는 기존 메시지 ID로 재시도해야 함",
+  );
   assert.equal(
     await page
       .getByRole("log")
@@ -242,7 +264,7 @@ try {
     1,
   );
   passed.push(
-    "메시지 실패 후 내용·사진 보존, 업로드 완료 사진 재사용, 재전송 후 중복 없음",
+    "메시지 실패 후 내용·사진 보존, 잘못된 첨부 선택 후에도 메시지 ID·업로드 재사용",
   );
 
   await open("?scene=chat&fail=upload");

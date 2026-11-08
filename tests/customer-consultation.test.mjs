@@ -107,6 +107,23 @@ test("메시지는 같은 clientMsgId·사진 ID와 토큰 헤더로 전송한�
   assert.deepEqual(JSON.parse(options.body), input);
   assert.ok(!String(fetch.mock.calls[0].arguments[0]).includes("inq_test"));
 });
+test("사진만 전송할 때 빈 본문을 서버에 null로 보낸다", async () => {
+  const fetch = respond({
+    messageId: 11,
+    deliveryStatus: "SENT",
+    aiStatus: "PROCESSING",
+  });
+  await sendCustomerMessage(10, "inq_test", {
+    clientMsgId: "photo-only",
+    content: "  ",
+    photoIds: [3],
+  });
+  assert.deepEqual(JSON.parse(fetch.mock.calls[0].arguments[1].body), {
+    clientMsgId: "photo-only",
+    content: null,
+    photoIds: [3],
+  });
+});
 test("입력·권한 정보가 잘못되면 요청하지 않고 잘못된 성공 응답을 거절한다", async () => {
   const fetch = respond({});
   await assert.rejects(createCustomerInquiry("x", []));

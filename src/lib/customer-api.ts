@@ -60,9 +60,10 @@ export async function sendCustomerMessage(
     /[\r\n]/.test(token)
   )
     throw new Error("Invalid inquiry access");
+  const content = input.content.trim();
   if (
     !input.clientMsgId ||
-    (!input.content.trim() && !input.photoIds.length) ||
+    (!content && !input.photoIds.length) ||
     input.photoIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
   )
     throw new Error("Invalid message");
@@ -75,7 +76,7 @@ export async function sendCustomerMessage(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, content: content || null }),
     },
   );
   if (

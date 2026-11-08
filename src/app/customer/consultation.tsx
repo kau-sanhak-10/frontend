@@ -144,10 +144,12 @@ export default function CustomerConsultation({
         urls.current.add(url);
         added.push({ id, file, url });
       }
-      setAttachments((current) => [...current, ...added]);
       setError(failures.join("\n"));
-      draftId.current = null;
-      if (added.length) setView("chat");
+      if (added.length) {
+        setAttachments((current) => [...current, ...added]);
+        draftId.current = null;
+        setView("chat");
+      }
     } finally {
       choosing.current = false;
       setPicking(false);
