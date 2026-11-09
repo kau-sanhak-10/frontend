@@ -17,7 +17,11 @@ import {
   saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
-import { isVisitDemoLink } from "../src/lib/customer-visit-demo.ts";
+import {
+  demoVisitLocations,
+  isVisitDemoLink,
+  saveCustomerDemoVisit,
+} from "../src/lib/customer-visit-demo.ts";
 
 test("방문 시연은 지정된 테스트 링크와 개발 서버에서만 열린다", () => {
   const link = "demo".padEnd(43, "0");
@@ -43,6 +47,53 @@ test("사장님 확인은 동일 문의의 서버 상태로만 판정한다", as
     isWaitingForOwner(10, "inq_test", signal),
     /Invalid inquiry status/,
   );
+});
+
+test("방문정보 저장 응답이 끊겨도 중복 저장하거나 다른 방문정보를 덮어쓰지 않는다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  const { address, lat, lng } = demoVisitLocations.destination;
+  const signal = new AbortController().signal;
+  let version = 4;
+  let visitInfo = {
+    address: null,
+    phone: null,
+    addressDetail: null,
+    accessNote: null,
+    lat: null,
+    lng: null,
+    workCategory: "REPAIR",
+  };
+  let writes = 0;
+  mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(
+      new Headers(options.headers).get("Authorization"),
+      "Bearer inq_test",
+    );
+    if (options.method === "PUT") {
+      writes++;
+      assert.equal(url.pathname, "/api/v1/customer/inquiries/10/visit-info");
+      assert.equal(JSON.parse(options.body).version, version);
+      visitInfo = { ...visitInfo, address, phone: "01000000001", lat, lng };
+      version++;
+      throw new TypeError("응답 유실");
+    }
+    assert.equal(url.pathname, "/api/v1/customer/inquiries/10");
+    return Response.json({
+      success: true,
+      code: "OK",
+      message: "OK",
+      result: { inquiryId: 10, version, visitInfo },
+    });
+  });
+  await assert.rejects(
+    saveCustomerDemoVisit(10, "inq_test", signal),
+    /응답 유실/,
+  );
+  assert.equal(await saveCustomerDemoVisit(10, "inq_test", signal), "saved");
+  assert.equal(writes, 1);
+  visitInfo = { ...visitInfo, addressDetail: "기존 방문정보" };
+  assert.equal(await saveCustomerDemoVisit(10, "inq_test", signal), "occupied");
+  assert.equal(writes, 1);
 });
 
 test("짧은 Dev 업체 링크는 지정된 시연 경로에서만 조회한다", async () => {

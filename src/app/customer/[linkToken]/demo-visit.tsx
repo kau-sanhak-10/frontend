@@ -4,11 +4,9 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
-  getCustomerInquiryVersion,
-  saveCustomerVisitInfo,
-} from "@/lib/customer-api";
-import { emptyVisitInfo } from "@/lib/customer-intake";
-import { demoVisitLocations } from "@/lib/customer-visit-demo";
+  demoVisitLocations,
+  saveCustomerDemoVisit,
+} from "@/lib/customer-visit-demo";
 import styles from "../intake.module.css";
 
 export default function CustomerDemoVisit({
@@ -23,7 +21,6 @@ export default function CustomerDemoVisit({
   const { origin, destination } = demoVisitLocations;
   const heading = useRef<HTMLHeadingElement>(null);
   const request = useRef<AbortController | null>(null);
-  const version = useRef<number | null>(null);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "blocked">(
     "idle",
   );
@@ -41,25 +38,20 @@ export default function CustomerDemoVisit({
     setState("saving");
     setError("");
     try {
-      version.current ??= await getCustomerInquiryVersion(
+      const result = await saveCustomerDemoVisit(
         inquiryId,
         inquiryToken,
         controller.signal,
       );
-      await saveCustomerVisitInfo(
-        inquiryId,
-        inquiryToken,
-        version.current,
-        {
-          ...emptyVisitInfo,
-          name: "일로 시연 고객",
-          phone: "01000000001",
-          address: destination.address,
-        },
-        destination,
-        controller.signal,
-      );
-      if (!controller.signal.aborted) setState("saved");
+      if (controller.signal.aborted) return;
+      if (result === "occupied") {
+        setState("blocked");
+        setError(
+          "이미 다른 방문정보가 저장돼 있어요. 시연 정보로 바꾸지 않았어요.",
+        );
+      } else {
+        setState("saved");
+      }
     } catch (error) {
       if (controller.signal.aborted) return;
       const status = error instanceof ApiError ? error.status : undefined;
@@ -67,7 +59,6 @@ export default function CustomerDemoVisit({
         error instanceof ApiError &&
         error.code === "INQUIRY_VERSION_CONFLICT"
       ) {
-        version.current = null;
         setState("idle");
         setError(
           "접수 내용이 갱신됐어요. 방문정보를 확인하고 다시 저장해 주세요.",

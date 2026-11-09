@@ -59,7 +59,10 @@ try {
     await setTimeout(200);
   }
   assert.ok(ready, logs);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({
+    headless: true,
+    channel: process.env.ILRO_TEST_BROWSER_CHANNEL || undefined,
+  });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -210,15 +213,15 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   const saveUrl = `${api}/api/v1/customer/inquiries/${inquiryId}/visit-info`;
   const visitSends = [];
-  await page.route(saveUrl, (route) => {
+  let savedVersion;
+  await page.route(saveUrl, async (route) => {
     if (route.request().method() !== "PUT") return route.continue();
     visitSends.push(route.request().postDataJSON());
     if (visitSends.length > 1) return route.continue();
-    return route.fulfill({
-      status: 503,
-      headers: { "Access-Control-Allow-Origin": base },
-      json: { success: false, code: "TEMPORARY_FAILURE" },
-    });
+    const response = await route.fetch();
+    assert.equal(response.status(), 200);
+    savedVersion = (await response.json()).result.version;
+    return route.abort("connectionreset");
   });
   const save = page.getByRole("button", { name: "한국항공대학교로 저장" });
   await save.click();
@@ -226,21 +229,13 @@ try {
     .getByRole("alert")
     .getByText(/저장 결과를 확인하지/)
     .waitFor();
-  const [saved] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.url() === saveUrl && response.request().method() === "PUT",
-    ),
-    save.click(),
-  ]);
-  assert.equal(saved.status(), 200);
-  const savedVersion = (await saved.json()).result.version;
+  await save.click();
   await page
     .getByRole("status")
     .getByText(/방문정보가 저장됐어요/)
     .waitFor();
-  assert.deepEqual(visitSends[0], visitSends[1]);
-  assert.deepEqual(visitSends[1], {
+  assert.equal(visitSends.length, 1);
+  assert.deepEqual(visitSends[0], {
     version,
     name: visit.name,
     phone: visit.phone,

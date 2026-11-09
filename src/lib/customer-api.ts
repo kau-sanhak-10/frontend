@@ -44,22 +44,23 @@ function inquiryAccess(inquiryId: number, token: string) {
   };
 }
 
-async function readInquiryVersion(
+async function readInquiry(
   path: string,
   inquiryId: number,
   options: RequestInit,
 ) {
-  const value = await requestApi<{ inquiryId: number; version: number }>(
-    path,
-    options,
-  );
+  const value = await requestApi<{
+    inquiryId: number;
+    version: number;
+    visitInfo?: unknown;
+  }>(path, options);
   if (
     value?.inquiryId !== inquiryId ||
     !Number.isSafeInteger(value.version) ||
     value.version < 0
   )
     throw new Error("Invalid inquiry version");
-  return value.version;
+  return value;
 }
 
 export async function getCustomerInquiryVersion(
@@ -68,7 +69,42 @@ export async function getCustomerInquiryVersion(
   signal?: AbortSignal,
 ) {
   const { path, headers } = inquiryAccess(inquiryId, token);
-  return readInquiryVersion(path, inquiryId, { headers, signal });
+  return (await readInquiry(path, inquiryId, { headers, signal })).version;
+}
+
+export async function getCustomerVisitSnapshot(
+  inquiryId: number,
+  token: string,
+  signal?: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const { version, visitInfo } = await readInquiry(path, inquiryId, {
+    headers,
+    signal,
+  });
+  const visit = visitInfo as Record<string, unknown> | undefined;
+  if (
+    !visit ||
+    ![visit.phone, visit.address, visit.addressDetail, visit.accessNote].every(
+      (value) => value === null || typeof value === "string",
+    ) ||
+    ![visit.lat, visit.lng].every(
+      (value) => value === null || Number.isFinite(value),
+    )
+  ) {
+    throw new Error("Invalid saved visit information");
+  }
+  return {
+    version,
+    visit: {
+      phone: visit.phone,
+      address: visit.address,
+      addressDetail: visit.addressDetail,
+      accessNote: visit.accessNote,
+      lat: visit.lat,
+      lng: visit.lng,
+    },
+  };
 }
 
 export async function isWaitingForOwner(
@@ -117,7 +153,7 @@ export async function saveCustomerVisitInfo(
     (visit.workTypeId && !Object.hasOwn(categoryNames, visit.workTypeId))
   )
     throw new Error("Invalid visit information");
-  return readInquiryVersion(`${path}/visit-info`, inquiryId, {
+  const saved = await readInquiry(`${path}/visit-info`, inquiryId, {
     method: "PUT",
     signal,
     headers: { ...headers, "Content-Type": "application/json" },
@@ -133,6 +169,7 @@ export async function saveCustomerVisitInfo(
       workCategory: visit.workTypeId || null,
     }),
   });
+  return saved.version;
 }
 
 export async function getCustomerIntake(
