@@ -16,6 +16,7 @@ import {
   missingAutoBookingSetup,
   isSettingsSectionDirty,
   refreshSettingsDraft,
+  setWorkTypeActive,
 } from "@/lib/owner-settings";
 import common from "../_components/owner-auth.module.css";
 import styles from "./settings.module.css";
@@ -607,25 +608,21 @@ export default function SettingsForm({
                       <input
                         type="checkbox"
                         checked={w.isActive}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            workTypes: draft.workTypes.map((v, n) =>
-                              n === i
-                                ? {
-                                    ...v,
-                                    isActive: e.target.checked,
-                                    durationMinutes: e.target.checked
-                                      ? v.durationMinutes
-                                      : saved.workTypes[i].durationMinutes,
-                                    autoBookingAllowed: e.target.checked
-                                      ? v.autoBookingAllowed
-                                      : false,
-                                  }
+                        onChange={(e) => {
+                          const isActive = e.target.checked;
+                          setDraft((current) => ({
+                            ...current,
+                            workTypes: current.workTypes.map((v) =>
+                              v.workCategory === w.workCategory
+                                ? setWorkTypeActive(
+                                    v,
+                                    isActive,
+                                    saved.workTypes,
+                                  )
                                 : v,
                             ),
-                          })
-                        }
+                          }));
+                        }}
                       />
                       <strong>{workCategories[w.workCategory]}</strong>
                     </label>
