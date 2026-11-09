@@ -35,6 +35,24 @@ export type WorkType = {
   durationMinutes: number;
   autoBookingAllowed: boolean;
 };
+
+export function setWorkTypeActive(
+  work: WorkType,
+  isActive: boolean,
+  saved: WorkType[],
+): WorkType {
+  return isActive
+    ? { ...work, isActive: true }
+    : {
+        ...work,
+        isActive: false,
+        durationMinutes:
+          saved.find((item) => item.workCategory === work.workCategory)
+            ?.durationMinutes ?? 60,
+        autoBookingAllowed: false,
+      };
+}
+
 export type ServiceArea = { regionCode: string; regionName: string };
 export type SettingsData = {
   business: BusinessInfo;

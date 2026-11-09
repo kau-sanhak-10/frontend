@@ -8,6 +8,7 @@ import {
   missingAutoBookingSetup,
   isSettingsSectionDirty,
   refreshSettingsDraft,
+  setWorkTypeActive,
 } from "../src/lib/owner-settings.ts";
 import {
   getBusiness,
@@ -209,6 +210,20 @@ test("저장 응답은 수정하지 않은 설정에 반영하고 다른 미저�
     refreshSettingsDraft("business", hours, previous, saved).booking,
     { ...saved.booking, bufferMinutes: 35 },
   );
+});
+test("작업을 끄면 순서가 바뀌거나 항목이 빠져도 해당 작업의 저장 시간을 복원한다", () => {
+  const repair = { ...workTypes[0], durationMinutes: 90 };
+  const leak = { ...repair, workCategory: "LEAK", durationMinutes: 30 };
+  const disabled = setWorkTypeActive(repair, false, [
+    leak,
+    { ...repair, durationMinutes: 75 },
+  ]);
+  assert.equal(disabled.durationMinutes, 75);
+  assert.equal(disabled.isActive, false);
+  assert.equal(disabled.autoBookingAllowed, false);
+  assert.deepEqual(validateWorkTypes([disabled]), {});
+  assert.equal(setWorkTypeActive(repair, false, [leak]).durationMinutes, 60);
+  assert.equal(setWorkTypeActive(repair, true, [leak]).durationMinutes, 90);
 });
 test("설정 저장은 own 토큰 헤더와 정확한 DTO만 보내며 상태 변경을 분리한다", async () => {
   let fetch = response(booking);
