@@ -10,7 +10,11 @@ import {
   maskName,
   mergeTodayVisits,
 } from "../src/lib/owner-inquiries/live-mapper.ts";
-import { needsOwnerCheck } from "../src/lib/owner-inquiries/rules.ts";
+import {
+  displayValue,
+  initialDraft,
+  needsOwnerCheck,
+} from "../src/lib/owner-inquiries/rules.ts";
 
 const listItem = (over = {}) => ({
   inquiryId: 12,
@@ -238,6 +242,78 @@ test("최근 AI 분석 실패의 확인 이유를 원문·사진과 분리해서
     mapDetail({ ...failed, status: "COLLECTING" }, messages).note,
     "",
   );
+});
+
+test("충돌은 미확인으로 표시하고 출처별 근거를 보여 주되 사장님 확정값은 유지한다", () => {
+  const conflicted = field({
+    fieldKey: "manufacturer",
+    value: "귀뚜라미",
+    source: "PHOTO",
+    unconfirmedReason: "CONFLICT",
+    photoId: 7,
+  });
+  const response = {
+    ...detail,
+    status: "COLLECTING",
+    fields: [conflicted],
+    aiSummary: {
+      ...detail.aiSummary,
+      conflicts: [
+        {
+          fieldKey: "manufacturer",
+          candidates: [
+            {
+              value: "경동나비엔",
+              source: "CUSTOMER",
+              evidence: { messageId: 1 },
+            },
+            { value: "귀뚜라미", source: "PHOTO", evidence: { photoId: 7 } },
+            {
+              value: "다른 후보",
+              source: "PHOTO",
+              evidence: { photoId: 99, messageId: 99 },
+            },
+            { value: "무효", source: "AI" },
+          ],
+        },
+      ],
+    },
+  };
+  const mapped = mapDetail(response, messages);
+  const manufacturer = mapped.summary[0];
+  assert.equal(displayValue(manufacturer), "미확인");
+  assert.equal(initialDraft(mapped.summary).manufacturer, "");
+  assert.equal(needsOwnerCheck(mapped), false);
+  assert.deepEqual(manufacturer.conflict, [
+    {
+      value: "경동나비엔",
+      source: "CUSTOMER",
+      evidence: { type: "MESSAGE", messageId: "1", quote: messages[0].content },
+    },
+    {
+      value: "귀뚜라미",
+      source: "PHOTO",
+      evidence: { type: "PHOTO", photoId: "7" },
+    },
+    { value: "다른 후보", source: "PHOTO", evidence: undefined },
+  ]);
+  const confirmed = mapDetail(
+    {
+      ...response,
+      fields: [
+        {
+          ...conflicted,
+          value: "린나이",
+          source: "OWNER",
+          status: "CONFIRMED",
+          unconfirmedReason: null,
+        },
+      ],
+    },
+    messages,
+  ).summary[0];
+  assert.equal(displayValue(confirmed), "린나이");
+  assert.equal(confirmed.conflict, undefined);
 });
 
 test("상세 항목의 출처·미확인 이유·근거·이력을 그대로 옮긴다", () => {

@@ -97,6 +97,7 @@ export type ServerDetail = {
   aiSummary: {
     summary: string | null;
     decidedAt: string | null;
+    conflicts?: unknown;
     nextAction?: string | null;
     nextActionReason?: string | null;
   } | null;
@@ -155,6 +156,7 @@ export const SERVER_FIELD_KEY: Record<EditableFieldKey, string> = {
 
 const UNCONFIRMED_REASON: Record<string, string> = {
   NOT_PROVIDED: "아직 고객이 알려 주지 않았어요.",
+  CONFLICT: "서로 다른 값이 있어 확인이 필요해요.",
 };
 
 const time = (iso: string) => Date.parse(iso);
@@ -258,7 +260,10 @@ function mapField(
   return {
     key: known.key,
     label: known.label,
-    value: field.value,
+    value:
+      unconfirmed && field.unconfirmedReason === "CONFLICT"
+        ? null
+        : field.value,
     source: sourceOf(field.source),
     state: unconfirmed ? "UNCONFIRMED" : "CONFIRMED",
     required: field.required,
@@ -278,6 +283,60 @@ function mapField(
   };
 }
 
+function mapConflict(
+  field: ServerFieldDetail,
+  detail: ServerDetail,
+  messages: ServerMessage[],
+): SummaryField["conflict"] {
+  const conflicts = detail.aiSummary?.conflicts;
+  if (
+    field.status !== "UNCONFIRMED" ||
+    field.unconfirmedReason !== "CONFLICT" ||
+    field.source === "OWNER" ||
+    !Array.isArray(conflicts)
+  )
+    return undefined;
+
+  const candidates: unknown = conflicts.find(
+    (conflict) => conflict?.fieldKey === field.fieldKey,
+  )?.candidates;
+  if (!Array.isArray(candidates)) return undefined;
+
+  const mapped: NonNullable<SummaryField["conflict"]> = [];
+  for (const candidate of candidates) {
+    const source: unknown = candidate?.source;
+    const value: unknown = candidate?.value;
+    if (
+      (source !== "CUSTOMER" && source !== "PHOTO" && source !== "OWNER") ||
+      typeof value !== "string" ||
+      !value.trim()
+    )
+      continue;
+    const photo = detail.photos.find(
+      (p) => p.photoId === candidate.evidence?.photoId,
+    );
+    const message = messages.find(
+      (m) => m.messageId === candidate.evidence?.messageId,
+    );
+    mapped.push({
+      value: value.trim(),
+      source,
+      evidence: photo
+        ? { type: "PHOTO", photoId: String(photo.photoId) }
+        : message?.content
+          ? {
+              type: "MESSAGE",
+              messageId: String(message.messageId),
+              quote: message.content,
+            }
+          : undefined,
+    });
+  }
+  return new Set(mapped.map(({ value }) => value)).size > 1
+    ? mapped
+    : undefined;
+}
+
 function mapMessage(m: ServerMessage): InquiryMessage {
   return {
     id: String(m.messageId),
@@ -295,9 +354,15 @@ export function mapDetail(
 ): InquiryDetail {
   const status = mapStatus(detail.status, detail.handlerMode);
   const summary = detail.fields
-    .map((f) => mapField(f, messages))
+    .map((f) => {
+      const mapped = mapField(f, messages);
+      if (mapped) mapped.conflict = mapConflict(f, detail, messages);
+      return mapped;
+    })
     .filter((f): f is SummaryField => f !== null);
-  const symptom = detail.fields.find((f) => f.fieldKey === "symptom")?.value;
+  const symptom = summary.find(
+    (f) => f.key === "symptom" && f.state === "CONFIRMED",
+  )?.value;
   const firstCustomer = messages.find(
     (m) => m.sender === "CUSTOMER" && m.content,
   );

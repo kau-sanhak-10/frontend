@@ -26,6 +26,7 @@ import {
 import type {
   InquiryDetail,
   InquiryPhoto,
+  SummaryEvidence,
   SummaryField,
 } from "@/lib/owner-inquiries/types";
 
@@ -255,7 +256,8 @@ function SummaryRow({
   return (
     <div className={styles.field}>
       <dt className={styles.fieldLabel}>
-        {field.label} · {SOURCE_LABEL[field.source]}
+        {field.label}
+        {field.conflict ? null : ` · ${SOURCE_LABEL[field.source]}`}
       </dt>
       <dd
         className={`${styles.fieldValue} ${unconfirmed ? styles.unconfirmed : ""}`}
@@ -271,13 +273,27 @@ function SummaryRow({
           {field.history.at(-1)?.value ?? "미확인"}
         </dd>
       ) : null}
-      {field.reason || field.evidence ? (
+      {field.reason || field.evidence || field.conflict ? (
         <dd className={styles.fieldNote}>
           {field.reason ? <span>{field.reason}</span> : null}
-          {field.evidence ? (
+          {field.conflict ? (
+            <details className={styles.evidence}>
+              <summary>서로 다른 값 보기</summary>
+              {field.conflict.map(({ source, value, evidence }, index) => (
+                <div key={`${source}-${index}`}>
+                  <p>
+                    {SOURCE_LABEL[source]}: {value}
+                  </p>
+                  {evidence ? (
+                    <EvidenceText evidence={evidence} photoById={photoById} />
+                  ) : null}
+                </div>
+              ))}
+            </details>
+          ) : field.evidence ? (
             <details className={styles.evidence}>
               <summary>근거 보기</summary>
-              <EvidenceText field={field} photoById={photoById} />
+              <EvidenceText evidence={field.evidence} photoById={photoById} />
             </details>
           ) : null}
         </dd>
@@ -287,14 +303,12 @@ function SummaryRow({
 }
 
 function EvidenceText({
-  field,
+  evidence: ev,
   photoById,
 }: {
-  field: SummaryField;
+  evidence: SummaryEvidence;
   photoById: Map<string, InquiryPhoto>;
 }) {
-  const ev = field.evidence;
-  if (!ev) return null;
   if (ev.type === "MESSAGE") return <p>고객 메시지: “{ev.quote}”</p>;
   if (ev.type === "MANUAL") {
     return (

@@ -60,6 +60,11 @@ export type SummaryField = {
   /** 미확인·해석일 때 사장님에게 보여 줄 이유 */
   reason?: string;
   evidence?: SummaryEvidence;
+  conflict?: {
+    value: string;
+    source: "CUSTOMER" | "PHOTO" | "OWNER";
+    evidence?: SummaryEvidence;
+  }[];
   /** 이전 값 (오래된 것부터). 사장님이 고치면 고치기 전 값이 여기 남습니다. */
   history?: FieldHistoryItem[];
 };

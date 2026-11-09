@@ -13,7 +13,9 @@ const browser = await chromium.launch({
   channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
 });
 try {
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
   const owner = {
     ownerId: 42,
     businessName: "테스트 보일러",
@@ -23,7 +25,7 @@ try {
   const expiresAt = new Date(Date.now() + 600_000).toISOString();
   const createdAt = new Date().toISOString();
   const address = "한국항공대학교";
-  const symptom = "시연 테스트 — 보일러 온수가 안 나와요";
+  const symptom = "시연 테스트 — 경동나비엔 보일러인데 온수가 안 나와요";
   const inquiry = {
     inquiryId: 12,
     status: "COLLECTING",
@@ -99,8 +101,42 @@ try {
           ...inquiry,
           version: 1,
           visitInfo: { address, name: null, workCategory: null },
-          fields: [],
-          photos: [],
+          fields: [
+            {
+              fieldKey: "manufacturer",
+              required: false,
+              value: "귀뚜라미",
+              source: "PHOTO",
+              status: "UNCONFIRMED",
+              unconfirmedReason: "CONFLICT",
+              photoId: 7,
+              messageId: null,
+              updatedAt: createdAt,
+              history: [],
+            },
+          ],
+          aiSummary: {
+            summary: null,
+            decidedAt: createdAt,
+            conflicts: [
+              {
+                fieldKey: "manufacturer",
+                candidates: [
+                  {
+                    value: "경동나비엔",
+                    source: "CUSTOMER",
+                    evidence: { messageId: 1 },
+                  },
+                  {
+                    value: "귀뚜라미",
+                    source: "PHOTO",
+                    evidence: { photoId: 7 },
+                  },
+                ],
+              },
+            ],
+          },
+          photos: [{ photoId: 7, messageId: null }],
           reservation: null,
         });
       case "GET /api/v1/owner/inquiries/12/messages":
@@ -116,6 +152,13 @@ try {
             },
           ],
           hasMore: false,
+        });
+      case "GET /api/v1/owner/inquiries/12/photos/7/url":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply({
+          photoId: 7,
+          url: `${base}/owner/examples/boiler-example.png`,
+          expiresAt,
         });
       case "POST /api/v1/auth/logout":
         assert.equal(request.headers().authorization, "Bearer own_test");
@@ -149,6 +192,23 @@ try {
   await page.getByRole("heading", { name: "접수 상세" }).waitFor();
   await page.getByText(address, { exact: true }).waitFor();
   await page.getByText(`“${symptom}”`, { exact: true }).waitFor();
+  await page.getByText("서로 다른 값이 있어 확인이 필요해요.").waitFor();
+  await page.getByText("서로 다른 값 보기", { exact: true }).click();
+  await page.getByText("고객 설명: 경동나비엔", { exact: true }).waitFor();
+  await page.getByText("사진: 귀뚜라미", { exact: true }).waitFor();
+  await page.getByText(`고객 메시지: “${symptom}”`, { exact: true }).waitFor();
+  const evidence = page
+    .locator("details")
+    .filter({ hasText: "서로 다른 값 보기" });
+  await evidence
+    .getByRole("link", { name: "고객 사진 1 원본 보기 (새 탭)" })
+    .waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
   await page.goto(`${base}/owner`);
   await page.reload();
   await page.getByRole("link", { name: "내 계정" }).click();
@@ -164,7 +224,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: owner verification, inquiry list and detail, session reload, and logout",
+    "PASS: owner verification, inquiry details and conflict evidence, session reload, and logout",
   );
 } finally {
   await browser.close();
