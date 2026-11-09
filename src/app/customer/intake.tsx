@@ -30,6 +30,7 @@ type Props = {
   onRetry?: () => void;
   onLookup?: () => void;
   textOnly?: boolean;
+  photosEnabled?: boolean;
   visitDemo?: boolean;
   preview?: boolean;
   previewFailure?: "start" | "visit" | "address" | "region";
@@ -47,6 +48,7 @@ export default function CustomerIntake({
   onRetry,
   onLookup,
   textOnly = false,
+  photosEnabled = !textOnly,
   visitDemo = false,
   preview = false,
   previewFailure,
@@ -93,7 +95,7 @@ export default function CustomerIntake({
     try {
       const consents: Parameters<NonNullable<Props["onStart"]>>[0]["consents"] =
         [{ type: "PRIVACY_REQUIRED", termsVersion: business.termsVersion }];
-      if (photo && !textOnly)
+      if (photo && photosEnabled)
         consents.push({ type: "PHOTO", termsVersion: business.termsVersion });
       if (preview) {
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -385,7 +387,7 @@ export default function CustomerIntake({
                   >
                     수집 항목·이용 목적·보관 기간 보기
                   </button>
-                  {!textOnly && (
+                  {photosEnabled && (
                     <>
                       <label>
                         <input
@@ -422,7 +424,7 @@ export default function CustomerIntake({
                     : "상담·예약에 필요한 정보를 확인하세요."}
                 </h2>
                 <p>
-                  {textOnly
+                  {textOnly && !photosEnabled
                     ? "필수 동의 후에 글로 상담을 시작할 수 있어요."
                     : "필수 동의 후에 상담이 시작돼요. 사진은 별도로 동의한 경우 수집해요."}
                 </p>
@@ -430,7 +432,9 @@ export default function CustomerIntake({
                   <dt>수집 항목</dt>
                   <dd>
                     {textOnly
-                      ? "고객이 입력한 상담 내용"
+                      ? photosEnabled
+                        ? "고객이 입력한 상담 내용과 별도 동의한 첨부 사진"
+                        : "고객이 입력한 상담 내용"
                       : "상담 내용·이름·연락처·방문 주소, 별도 동의한 첨부 사진"}
                   </dd>
                   <dt>이용 목적</dt>
@@ -441,7 +445,7 @@ export default function CustomerIntake({
                   </dd>
                   <dt>보관·삭제 기준</dt>
                   <dd>
-                    {textOnly
+                    {textOnly && !photosEnabled
                       ? "상담: 종료 후 30일"
                       : "상담·사진: 종료 후 30일"}
                     <br />

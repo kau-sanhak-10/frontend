@@ -1,4 +1,5 @@
 import { requestApi } from "./api.ts";
+import { validatePhoto } from "./customer-consultation.ts";
 import type {
   CustomerMessage,
   SendCustomerInput,
@@ -148,6 +149,99 @@ export async function getCustomerIntake(
   return { business, available: value.intakeAvailable };
 }
 
+export function createCustomerPhotoUploader(inquiryId: number, token: string) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  type Ticket = {
+    photoId: number;
+    url: URL;
+    headers: Headers;
+    expires: number;
+    transferred: boolean;
+  };
+  const tickets = new WeakMap<File, Ticket>();
+
+  return async (file: File) => {
+    const issue = validatePhoto(file, 0);
+    if (issue) throw new Error(issue);
+    let ticket = tickets.get(file);
+    if (!ticket || (!ticket.transferred && ticket.expires <= Date.now())) {
+      const value = await requestApi<{
+        photoId: number;
+        uploadUrl: string;
+        method: string;
+        headers: Record<string, string>;
+        expiresAt: string;
+      }>(`${path}/photos`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ contentType: file.type, sizeBytes: file.size }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const url = URL.parse(value?.uploadUrl ?? "");
+      const expires = Date.parse(value?.expiresAt);
+      const uploadHeaders = new Headers(value?.headers);
+      if (
+        !value ||
+        !Number.isSafeInteger(value.photoId) ||
+        value.photoId <= 0 ||
+        value.method !== "PUT" ||
+        !url ||
+        url.protocol !== "https:" ||
+        url.username ||
+        url.password ||
+        url.port ||
+        url.hash ||
+        !/^(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)*\.amazonaws\.com$/.test(
+          url.hostname,
+        ) ||
+        !(expires > Date.now()) ||
+        [...uploadHeaders.keys()].some((key) => key !== "content-type") ||
+        (uploadHeaders.has("content-type") &&
+          uploadHeaders.get("content-type") !== file.type)
+      )
+        throw new Error("Invalid photo upload ticket");
+      uploadHeaders.set("Content-Type", file.type);
+      ticket = {
+        photoId: value.photoId,
+        url,
+        headers: uploadHeaders,
+        expires,
+        transferred: false,
+      };
+      tickets.set(file, ticket);
+    }
+
+    // ponytail: reuse this file's ticket for retries; server cancellation and cleanup are handled by BE-06.
+    if (!ticket.transferred) {
+      const response = await fetch(ticket.url, {
+        method: "PUT",
+        headers: ticket.headers,
+        body: file,
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+        redirect: "error",
+        signal: AbortSignal.timeout(45_000),
+      });
+      if (!response.ok) throw new Error("Photo storage upload failed");
+      ticket.transferred = true;
+    }
+    const complete = await requestApi<{
+      photoId: number;
+      uploadStatus: string;
+    }>(`${path}/photos/${ticket.photoId}/complete`, {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (complete?.photoId !== ticket.photoId)
+      throw new Error("Invalid photo upload result");
+    if (complete.uploadStatus === "FAILED") tickets.delete(file);
+    if (complete.uploadStatus !== "DONE")
+      throw new Error("Photo upload not confirmed");
+    return { photoId: ticket.photoId };
+  };
+}
+
 export async function getCustomerMessages(
   inquiryId: number,
   token: string,
@@ -161,6 +255,7 @@ export async function getCustomerMessages(
       messageId: number;
       sender: CustomerMessage["role"];
       content: string | null;
+      photoIds?: number[];
       deliveryStatus: string;
     }[];
     hasMore: boolean;
@@ -180,16 +275,20 @@ export async function getCustomerMessages(
     if (row.deliveryStatus === "PENDING")
       return { messages, cursor, hasMore: false };
     cursor = row.messageId;
+    const photoIds = Array.isArray(row.photoIds)
+      ? row.photoIds.filter((id) => Number.isSafeInteger(id) && id > 0)
+      : [];
+    const content = typeof row.content === "string" ? row.content : "";
     if (
       row.deliveryStatus === "SENT" &&
       ["CUSTOMER", "AI", "OWNER"].includes(row.sender) &&
-      typeof row.content === "string" &&
-      row.content.trim()
+      (content.trim() || photoIds?.length)
     )
       messages.push({
         id: String(row.messageId),
         role: row.sender,
-        content: row.content,
+        content,
+        ...(photoIds?.length ? { photoIds } : {}),
       });
   }
   return { messages, cursor, hasMore: value.hasMore && cursor > afterId };
