@@ -53,7 +53,25 @@ export type SummaryField = {
   /** 미확인·해석일 때 사장님에게 보여 줄 이유 */
   reason?: string;
   evidence?: SummaryEvidence;
+  /** 이전 값 (오래된 것부터). 사장님이 고치면 고치기 전 값이 여기 남습니다. */
+  history?: FieldHistoryItem[];
 };
+
+/** 항목의 이전 값 한 줄 (B-14 수정 이력) */
+export type FieldHistoryItem = {
+  value: string | null;
+  source: SummarySource;
+  changedAt: number;
+};
+
+/**
+ * 사장님이 고칠 수 있는 항목 (B-14)
+ * 백엔드 PATCH /api/v1/owner/inquiries/{id} 의 fieldKey와 맞춥니다.
+ */
+export type EditableFieldKey =
+  "manufacturer" | "model" | "errorCode" | "symptom";
+
+export type FieldChange = { key: EditableFieldKey; value: string };
 
 export type InquiryPhoto = {
   id: string;
@@ -103,6 +121,8 @@ export type InquiryDetail = InquirySummary & {
   summaryUpdatedAt: number | null;
   photos: InquiryPhoto[];
   messages: InquiryMessage[];
+  /** 수정할 때 그대로 돌려보내는 버전. 그 사이 다른 곳에서 바뀌면 저장이 거절됩니다. */
+  version: number;
 };
 
 /** 업체 전용 접수 링크 (B-11, QR 제외) */
@@ -114,3 +134,14 @@ export type IntakeLink =
 /** 조회 결과. 실패를 0건으로 바꾸지 않도록 성공/실패를 구분합니다. */
 export type LoadResult<T> =
   { ok: true; data: T } | { ok: false; code: "LOAD_FAILED" | "NOT_FOUND" };
+
+/**
+ * 저장 결과. 실패를 성공처럼 보이지 않게 이유를 구분합니다.
+ * - SAVE_FAILED: 네트워크·서버 문제로 저장 못 함 → 다시 시도
+ * - CONFLICT: 화면을 연 뒤 다른 곳에서 먼저 바뀜 → 최신 내용 다시 불러오기
+ * - INVALID: 빈 값이나 너무 긴 값
+ * - NOT_FOUND: 없거나 다른 업체 문의
+ */
+export type SaveResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; code: "SAVE_FAILED" | "CONFLICT" | "INVALID" | "NOT_FOUND" };

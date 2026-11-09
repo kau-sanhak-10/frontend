@@ -6,10 +6,14 @@
 // - 한빛 보일러 (로그인 010-1111-2222) : 문의 7건
 // - 튼튼설비 : 문의 1건. 한빛 보일러 화면에 섞이면 안 됩니다.
 import type {
+  EditableFieldKey,
+  FieldChange,
   InquiryDetail,
   InquirySummary,
   IntakeLink,
   LoadResult,
+  SaveResult,
+  SummaryField,
 } from "./types";
 
 /**
@@ -20,10 +24,19 @@ import type {
  * - ?mock=nolink : 운영이 아직 접수 링크를 발급하지 않은 상태 (B16)
  * - ?mock=summaryfail : 요약 실패 시에도 사진·대화를 조회
  * - ?mock=photos : 여러 첨부 사진 조회 (같은 예시 자산을 두 번 사용)
+ * - ?mock=savefail : 접수 정보 저장 실패 (B-14)
+ * - ?mock=conflict : 다른 곳에서 먼저 바뀌어 저장이 거절됨 (B-14)
  * 개발 서버(npm run dev)에서만 동작하고 배포 화면에서는 무시합니다.
  */
 export type DevMockMode =
-  "empty" | "fail" | "slow" | "nolink" | "summaryfail" | "photos";
+  | "empty"
+  | "fail"
+  | "slow"
+  | "nolink"
+  | "summaryfail"
+  | "photos"
+  | "savefail"
+  | "conflict";
 
 function devMockMode(): DevMockMode | null {
   if (process.env.NODE_ENV === "production") return null;
@@ -34,7 +47,9 @@ function devMockMode(): DevMockMode | null {
     mode === "slow" ||
     mode === "nolink" ||
     mode === "summaryfail" ||
-    mode === "photos"
+    mode === "photos" ||
+    mode === "savefail" ||
+    mode === "conflict"
     ? mode
     : null;
 }
@@ -44,6 +59,8 @@ export const mockInquiryConfig = {
   delayMs: 400,
   /** true면 조회가 실패합니다. 조회 실패 화면 확인용입니다. */
   fail: false,
+  /** true면 저장이 실패합니다. 저장 실패 안내 확인용입니다. */
+  saveFail: false,
   now: () => Date.now(),
 };
 
@@ -69,6 +86,12 @@ function todayAt(h: number, m = 0) {
 }
 
 function buildInquiries(): InquiryDetail[] {
+  return baseInquiries().map((inquiry) =>
+    applySavedEdit({ ...inquiry, version: 1 }),
+  );
+}
+
+function baseInquiries(): Omit<InquiryDetail, "version">[] {
   const now = mockInquiryConfig.now();
   return [
     {
@@ -401,6 +424,103 @@ export async function fetchInquiryDetail(
     found.photos.push({ ...found.photos[0], id: "p2", alt: "추가 사진 예시" });
   }
   return found ? { ok: true, data: found } : { ok: false, code: "NOT_FOUND" };
+}
+
+// ── 접수 정보 수정 (B-14) ─────────────────────────────
+// 목업은 브라우저 메모리에 저장합니다. 새로고침하면 처음 값으로 돌아갑니다.
+
+const FIELD_LABEL: Record<EditableFieldKey, string> = {
+  manufacturer: "제조사",
+  model: "모델명",
+  errorCode: "오류코드",
+  symptom: "증상",
+};
+
+const MAX_VALUE_LENGTH = 255;
+
+/** 문의별로 사장님이 저장한 결과 (버전 + 고친 뒤의 항목들) */
+const savedEdits = new Map<
+  string,
+  { version: number; summary: SummaryField[] }
+>();
+
+function applySavedEdit(inquiry: InquiryDetail): InquiryDetail {
+  const saved = savedEdits.get(inquiry.id);
+  return saved
+    ? { ...inquiry, version: saved.version, summary: saved.summary }
+    : inquiry;
+}
+
+/** 테스트끼리 저장 결과가 섞이지 않게 비웁니다. */
+export function resetMockEdits() {
+  savedEdits.clear();
+}
+
+/**
+ * 사장님이 확인한 값으로 접수 항목을 고칩니다.
+ * 실제 API: PATCH /api/v1/owner/inquiries/{id} (version + fields)
+ * - 고친 항목은 출처 '사장님 확인'·확인됨이 되고, 고치기 전 값은 이력에 남습니다.
+ * - 화면이 본 version과 지금 version이 다르면 CONFLICT로 거절합니다.
+ */
+export async function updateInquiryFields(
+  businessId: string,
+  inquiryId: string,
+  request: { version: number; changes: FieldChange[] },
+): Promise<SaveResult<InquiryDetail>> {
+  await wait();
+  if (mockInquiryConfig.saveFail || devMockMode() === "savefail") {
+    return { ok: false, code: "SAVE_FAILED" };
+  }
+  const current = buildInquiries().find(
+    (i) => i.id === inquiryId && i.businessId === businessId,
+  );
+  if (!current) return { ok: false, code: "NOT_FOUND" };
+
+  const values = request.changes.map((c) => c.value.trim());
+  if (
+    request.changes.length === 0 ||
+    values.some((v) => v === "" || v.length > MAX_VALUE_LENGTH)
+  ) {
+    return { ok: false, code: "INVALID" };
+  }
+  if (devMockMode() === "conflict" || request.version !== current.version) {
+    return { ok: false, code: "CONFLICT" };
+  }
+
+  const changedAt = mockInquiryConfig.now();
+  const summary = current.summary.map((f) => ({ ...f }));
+  request.changes.forEach((change, index) => {
+    const value = values[index];
+    const before = summary.find((f) => f.key === change.key);
+    if (!before) {
+      summary.push({
+        key: change.key,
+        label: FIELD_LABEL[change.key],
+        value,
+        source: "OWNER",
+        state: "CONFIRMED",
+        required: change.key === "symptom",
+        history: [],
+      });
+      return;
+    }
+    if (before.value === value && before.source === "OWNER") return;
+    before.history = [
+      ...(before.history ?? []),
+      { value: before.value, source: before.source, changedAt },
+    ];
+    before.value = value;
+    before.source = "OWNER";
+    before.state = "CONFIRMED";
+    before.reason = undefined;
+    before.evidence = undefined;
+  });
+
+  savedEdits.set(inquiryId, { version: current.version + 1, summary });
+  return {
+    ok: true,
+    data: { ...current, version: current.version + 1, summary },
+  };
 }
 
 const INTAKE_LINKS: Record<string, IntakeLink> = {
