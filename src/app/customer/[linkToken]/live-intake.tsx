@@ -44,10 +44,12 @@ export default function CustomerLiveIntake({
   linkToken,
   visitDemo,
   photoDemo,
+  photoCancel,
 }: {
   linkToken: string;
   visitDemo: boolean;
   photoDemo: boolean;
+  photoCancel: boolean;
 }) {
   const validLink = isIntakeLinkToken(linkToken, visitDemo);
   const [status, setStatus] = useState<IntakeStatus>(
@@ -80,6 +82,7 @@ export default function CustomerLiveIntake({
         inquiry={inquiry}
         visitDemo={visitDemo}
         photoDemo={photoDemo}
+        photoCancel={photoCancel}
       />
     );
   return (
@@ -115,11 +118,13 @@ function LiveConsultation({
   inquiry,
   visitDemo,
   photoDemo,
+  photoCancel,
 }: {
   business: IntakeBusiness;
   inquiry: Inquiry;
   visitDemo: boolean;
   photoDemo: boolean;
+  photoCancel: boolean;
 }) {
   const { inquiryId, inquiryToken, expiresAt, photoConsent } = inquiry;
   const [photoUploader] = useState(() =>
@@ -305,7 +310,9 @@ function LiveConsultation({
             }
       }
       onUpload={!ended && photoConsent ? photoUploader.upload : undefined}
-      onCancelUpload={photoConsent ? photoUploader.cancel : undefined}
+      onCancelUpload={
+        photoConsent && photoCancel ? photoUploader.cancel : undefined
+      }
     />
   );
 }

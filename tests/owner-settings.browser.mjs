@@ -302,9 +302,7 @@ try {
     console.log(`PASS ${width}px 화면·줄바꿈`);
   }
   await page.goto(`${base}/owner/settings`);
-  await page
-    .getByText("실제 업체 설정은 사장님 인증 연결 후 이용할 수 있어요.")
-    .waitFor();
+  await page.getByText("실제 업체 설정은 아직 연결되지 않았어요.").waitFor();
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   console.log("PASS 운영 경로 인증 차단·외부 요청 없음·화면 오류 없음");

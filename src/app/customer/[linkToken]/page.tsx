@@ -29,6 +29,7 @@ export default async function Page({
       photoDemo={
         visitDemo && process.env.CUSTOMER_PHOTO_DEMO_ENABLED === "true"
       }
+      photoCancel={process.env.CUSTOMER_PHOTO_CANCEL_ENABLED === "true"}
     />
   );
 }
