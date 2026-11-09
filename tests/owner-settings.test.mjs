@@ -233,7 +233,14 @@ test("설정 저장은 own 토큰 헤더와 정확한 DTO만 보내며 상태 �
     new Headers(options.headers).get("Authorization"),
     "Bearer own_test",
   );
-  assert.equal(JSON.parse(options.body).autoBookingEnabled, undefined);
+  assert.deepEqual(JSON.parse(options.body), {
+    businessHours: booking.businessHours,
+    lunchStart: booking.lunchStart,
+    lunchEnd: booking.lunchEnd,
+    maxDailyVisits: booking.maxDailyVisits,
+    bufferMinutes: booking.bufferMinutes,
+    travelMode: booking.travelMode,
+  });
   mock.restoreAll();
   fetch = response({ autoBookingEnabled: true });
   await setAutoBooking("own_test", true);
