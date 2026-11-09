@@ -107,7 +107,7 @@ test("사진 업로드 완료 응답이 끊겨도 같은 티켓으로 완료만 
     if (calls.length === 3) throw new TypeError("Connection lost");
     return reply({ photoId: 12, uploadStatus: "DONE" });
   });
-  const upload = createCustomerPhotoUploader(1, "inq_test");
+  const { upload } = createCustomerPhotoUploader(1, "inq_test");
   await assert.rejects(upload(file), /Connection lost/);
   assert.deepEqual(await upload(file), { photoId: 12 });
   assert.deepEqual(
@@ -115,6 +115,56 @@ test("사진 업로드 완료 응답이 끊겨도 같은 티켓으로 완료만 
     ["POST", "PUT", "POST", "POST"],
   );
   assert.deepEqual(calls[2], calls[3]);
+});
+
+test("사진 취소는 서버에 발급된 사진만 지우고 실패하면 같은 ID로 다시 취소한다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  const file = new File(["test"], "photo.png", { type: "image/png" });
+  const signed = "https://demo.s3.ap-northeast-2.amazonaws.com/test.png";
+  const path = "/api/v1/customer/inquiries/1/photos";
+  let deletions = 0;
+  const requests = mock.method(globalThis, "fetch", async (url, options) => {
+    if (url.href === signed) throw new TypeError("Connection lost");
+    assert.equal(
+      new Headers(options.headers).get("Authorization"),
+      "Bearer inq_test",
+    );
+    if (url.pathname === path && options.method === "POST")
+      return Response.json({
+        success: true,
+        code: "OK",
+        message: "OK",
+        result: {
+          photoId: 12,
+          method: "PUT",
+          uploadUrl: signed,
+          headers: {},
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+        },
+      });
+    assert.equal(url.pathname, `${path}/12`);
+    assert.equal(options.method, "DELETE");
+    return ++deletions === 1
+      ? Response.json(
+          {
+            success: false,
+            code: "UNAVAILABLE",
+            message: "retry",
+            result: null,
+          },
+          { status: 503 },
+        )
+      : new Response(null, { status: 204 });
+  });
+  const { upload, cancel } = createCustomerPhotoUploader(1, "inq_test");
+  await cancel(file);
+  assert.equal(requests.mock.callCount(), 0);
+  await assert.rejects(upload(file), /Connection lost/);
+  await assert.rejects(cancel(file), /retry/);
+  await cancel(file);
+  await cancel(file);
+  assert.equal(deletions, 2);
+  assert.equal(requests.mock.callCount(), 4);
 });
 
 test("고객 사진 단독 메시지는 조회에서 빠지지 않는다", async () => {

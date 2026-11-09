@@ -1,4 +1,4 @@
-import { requestApi } from "./api.ts";
+import { ApiError, requestApi } from "./api.ts";
 import { validatePhoto } from "./customer-consultation.ts";
 import type {
   CustomerMessage,
@@ -160,7 +160,7 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
   };
   const tickets = new WeakMap<File, Ticket>();
 
-  return async (file: File) => {
+  async function upload(file: File) {
     const issue = validatePhoto(file, 0);
     if (issue) throw new Error(issue);
     let ticket = tickets.get(file);
@@ -211,7 +211,6 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
       tickets.set(file, ticket);
     }
 
-    // ponytail: reuse this file's ticket for retries; server cancellation and cleanup are handled by BE-06.
     if (!ticket.transferred) {
       const response = await fetch(ticket.url, {
         method: "PUT",
@@ -239,7 +238,25 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
     if (complete.uploadStatus !== "DONE")
       throw new Error("Photo upload not confirmed");
     return { photoId: ticket.photoId };
-  };
+  }
+
+  async function cancel(file: File) {
+    const ticket = tickets.get(file);
+    if (!ticket) return;
+    try {
+      await requestApi<unknown>(`${path}/photos/${ticket.photoId}`, {
+        method: "DELETE",
+        headers,
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      // The common response parser expects JSON; an empty 204 is also a successful DELETE.
+      if (!(error instanceof ApiError) || error.status !== 204) throw error;
+    }
+    tickets.delete(file);
+  }
+
+  return { upload, cancel };
 }
 
 export async function getCustomerMessages(

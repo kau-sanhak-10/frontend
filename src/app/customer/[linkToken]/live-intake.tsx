@@ -120,7 +120,7 @@ function LiveConsultation({
   photoDemo: boolean;
 }) {
   const { inquiryId, inquiryToken, expiresAt, photoConsent } = inquiry;
-  const [uploadPhoto] = useState(() =>
+  const [photos] = useState(() =>
     createCustomerPhotoUploader(inquiryId, inquiryToken),
   );
   const [messages, setMessages] = useState<CustomerMessage[]>([]);
@@ -249,7 +249,8 @@ function LiveConsultation({
               : undefined
       }
       onSend={ended ? undefined : send}
-      onUpload={!ended && photoConsent ? uploadPhoto : undefined}
+      onUpload={!ended && photoConsent ? photos.upload : undefined}
+      onCancelUpload={photoConsent ? photos.cancel : undefined}
     />
   );
 }

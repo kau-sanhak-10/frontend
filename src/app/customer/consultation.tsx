@@ -37,6 +37,7 @@ type Props = {
   liveNotice?: string;
   onSend?: (input: SendCustomerInput) => Promise<void>;
   onUpload?: (file: File) => Promise<{ photoId: number }>;
+  onCancelUpload?: (file: File) => Promise<void>;
   onHandoff?: () => Promise<void>;
   onContinue?: () => void;
   onBack?: () => void;
@@ -56,6 +57,7 @@ export default function CustomerConsultation({
   liveNotice,
   onSend,
   onUpload,
+  onCancelUpload,
   onHandoff,
   onContinue,
   onBack,
@@ -241,15 +243,26 @@ export default function CustomerConsultation({
     }
   }
 
-  function remove(id: string) {
-    if (pending) return;
+  async function remove(id: string) {
+    if (busy.current || choosing.current) return;
     const attachment = attachments.find((a) => a.id === id);
-    if (attachment) {
+    if (!attachment) return;
+    busy.current = true;
+    setPending(true);
+    setError("");
+    try {
+      await onCancelUpload?.(attachment.file);
       URL.revokeObjectURL(attachment.url);
       urls.current.delete(attachment.url);
+      uploaded.current.delete(id);
+      setAttachments((current) => current.filter((a) => a.id !== id));
+      draftId.current = null;
+    } catch {
+      setError("사진 첨부를 취소하지 못했어요. 다시 시도해 주세요.");
+    } finally {
+      busy.current = false;
+      setPending(false);
     }
-    setAttachments((current) => current.filter((a) => a.id !== id));
-    draftId.current = null;
   }
 
   const photoButtonDisabled = !photoConsent || !onUpload || pending;
@@ -419,7 +432,7 @@ export default function CustomerConsultation({
                     <button
                       type="button"
                       disabled={pending}
-                      onClick={() => remove(a.id)}
+                      onClick={() => void remove(a.id)}
                       aria-label={`${a.file.name} 첨부 취소`}
                     >
                       첨부 취소
