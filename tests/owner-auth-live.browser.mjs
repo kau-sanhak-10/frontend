@@ -8,7 +8,10 @@ const { chromium } = await import(
     ? pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href
     : "playwright"
 );
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
+});
 try {
   const context = await browser.newContext();
   const owner = {
