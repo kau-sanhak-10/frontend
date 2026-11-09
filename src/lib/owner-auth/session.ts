@@ -1,15 +1,17 @@
-// ⚠️ 개발용 임시 로그인 유지입니다. 실제 세션·토큰 보관 방식은 백엔드와 정한 뒤 FE-07에서 교체합니다.
-// 브라우저 저장소에는 인증번호나 비밀값을 넣지 않습니다.
 import type { OwnerProfile } from "./types";
 
 const SESSION_KEY = "ilro.owner.mockSession";
+const LIVE_KEY = "ilro.owner.session";
 const NAME_KEY = "ilro.owner.mockNames";
 const CHANGE_EVENT = "ilro:owner-session";
 
 /** 승인 정책: 로그인 시점부터 최대 7일. 실제 만료·철회는 FE-07 서버 연동에서 검증합니다. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type OwnerSession = OwnerProfile & { expiresAt: number };
+export type OwnerSession = OwnerProfile & {
+  expiresAt: number;
+  accessToken?: string;
+};
 
 export type SessionState =
   | { status: "loading" }
@@ -24,6 +26,10 @@ export function parseSession(raw: string | null, now: number): SessionState {
     const data = JSON.parse(raw) as Partial<OwnerSession>;
     if (
       typeof data.expiresAt !== "number" ||
+      !Number.isFinite(data.expiresAt) ||
+      (data.accessToken !== undefined &&
+        (typeof data.accessToken !== "string" ||
+          !/^own_[A-Za-z0-9_-]+$/.test(data.accessToken))) ||
       typeof data.name !== "string" ||
       typeof data.loginPhone !== "string" ||
       typeof data.businessName !== "string" ||
@@ -40,7 +46,9 @@ export function parseSession(raw: string | null, now: number): SessionState {
 
 function read(key: string): string | null {
   try {
-    return window.localStorage.getItem(key);
+    const storage =
+      key === LIVE_KEY ? window.sessionStorage : window.localStorage;
+    return storage.getItem(key);
   } catch {
     return null;
   }
@@ -48,12 +56,18 @@ function read(key: string): string | null {
 
 function write(key: string, value: string | null) {
   try {
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
+    const storage =
+      key === LIVE_KEY ? window.sessionStorage : window.localStorage;
+    if (value === null) storage.removeItem(key);
+    else storage.setItem(key, value);
   } catch {
     // 저장소를 쓸 수 없는 환경(사생활 보호 모드 등)에서는 저장하지 않습니다.
   }
   window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+function readSession() {
+  return read(LIVE_KEY) ?? read(SESSION_KEY);
 }
 
 /** setTimeout이 한 번에 기다릴 수 있는 최대 시간(약 24.8일) */
@@ -74,7 +88,7 @@ export function subscribeSession(onChange: () => void) {
   const scheduleExpiryCheck = () => {
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
-    const ms = msUntilExpiry(read(SESSION_KEY), Date.now());
+    const ms = msUntilExpiry(readSession(), Date.now());
     if (ms === null) return;
     timer = setTimeout(
       () => {
@@ -112,7 +126,7 @@ export function subscribeSession(onChange: () => void) {
 
 /** 저장 문자열을 그대로 돌려주되, 만료되면 "expired"로 바꿔 화면이 다시 그려지게 합니다. */
 export function getSessionSnapshot(): string | null {
-  const raw = read(SESSION_KEY);
+  const raw = readSession();
   if (raw && parseSession(raw, Date.now()).status === "expired") {
     return "expired";
   }
@@ -146,7 +160,20 @@ export function saveSession(profile: OwnerProfile) {
     name,
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
+  write(LIVE_KEY, null);
   write(SESSION_KEY, JSON.stringify(session));
+}
+
+export function saveLiveSession(
+  session: OwnerSession & { accessToken: string },
+) {
+  const raw = JSON.stringify(session);
+  if (parseSession(raw, Date.now()).status !== "active")
+    throw new Error("Invalid owner session");
+  write(SESSION_KEY, null);
+  write(LIVE_KEY, raw);
+  if (read(LIVE_KEY) !== raw)
+    throw new Error("Owner session storage unavailable");
 }
 
 /** 이름을 바꿉니다. 다시 로그인해도 유지되도록 따로 보관합니다. */
@@ -160,5 +187,6 @@ export function updateSessionName(session: OwnerSession, name: string) {
 
 /** 로그아웃: 이 브라우저의 로그인 상태를 지웁니다. */
 export function clearSession() {
+  write(LIVE_KEY, null);
   write(SESSION_KEY, null);
 }

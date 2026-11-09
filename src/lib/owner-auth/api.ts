@@ -34,7 +34,7 @@ const date = (v: unknown): v is string =>
 const id = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 
-// 실제 인증 API. 기존 화면 확인용 mock-api와 분리하며 실문자 검증 전 자동 전환하지 않는다.
+// 실제 인증 API. 화면 확인용 인증과 별개로 호출한다.
 export async function requestOwnerVerification(
   phone: string,
   signal?: AbortSignal,
@@ -79,7 +79,7 @@ export async function confirmOwnerVerification(
     !record(v) ||
     v.purpose !== "OWNER_LOGIN" ||
     typeof v.accessToken !== "string" ||
-    !v.accessToken.startsWith("own_") ||
+    !/^own_[A-Za-z0-9_-]+$/.test(v.accessToken) ||
     !date(v.expiresAt) ||
     !record(v.owner) ||
     !id(v.owner.ownerId) ||

@@ -71,6 +71,22 @@ export function OwnerGate({ screenName, children }: OwnerGateProps) {
     );
   }
 
+  if (state.status === "live") {
+    return (
+      <main className={styles.page}>
+        <p className={styles.brand}>일로 · 사장님</p>
+        <h1 className={styles.title}>{state.session.businessName}</h1>
+        <StatusPanel
+          title="접수함과 방문 일정은 준비 중이에요."
+          body="내 계정에서 업체와 로그인 번호를 확인할 수 있어요."
+        />
+        <nav className={styles.links} aria-label="사장님 메뉴">
+          <Link href="/owner/account">내 계정</Link>
+        </nav>
+      </main>
+    );
+  }
+
   return (
     <>
       <p className={styles.previewNotice} role="note">
