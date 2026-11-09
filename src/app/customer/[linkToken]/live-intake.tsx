@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
   createCustomerInquiry,
+  createCustomerPhotoUploader,
   getCustomerIntake,
   getCustomerMessages,
   isIntakeLinkToken,
@@ -25,7 +26,9 @@ const emptyBusiness: IntakeBusiness = {
   termsVersion: "",
   workTypes: [],
 };
-type Inquiry = Awaited<ReturnType<typeof createCustomerInquiry>>;
+type Inquiry = Awaited<ReturnType<typeof createCustomerInquiry>> & {
+  photoConsent: boolean;
+};
 
 function linkStatus(error: unknown): IntakeStatus {
   if (!(error instanceof ApiError)) return "error";
@@ -38,9 +41,11 @@ function linkStatus(error: unknown): IntakeStatus {
 export default function CustomerLiveIntake({
   linkToken,
   visitDemo,
+  photoDemo,
 }: {
   linkToken: string;
   visitDemo: boolean;
+  photoDemo: boolean;
 }) {
   const validLink = isIntakeLinkToken(linkToken, visitDemo);
   const [status, setStatus] = useState<IntakeStatus>(
@@ -72,6 +77,7 @@ export default function CustomerLiveIntake({
         business={business}
         inquiry={inquiry}
         visitDemo={visitDemo}
+        photoDemo={photoDemo}
       />
     );
   return (
@@ -80,13 +86,18 @@ export default function CustomerLiveIntake({
       status={status}
       textOnly
       visitDemo={visitDemo}
+      photosEnabled={photoDemo}
       onRetry={() => {
         setStatus("loading");
         setAttempt((value) => value + 1);
       }}
       onStart={async ({ consents }) => {
         try {
-          setInquiry(await createCustomerInquiry(linkToken, consents));
+          const created = await createCustomerInquiry(linkToken, consents);
+          setInquiry({
+            ...created,
+            photoConsent: photoDemo && consents.some((c) => c.type === "PHOTO"),
+          });
         } catch (error) {
           const status = linkStatus(error);
           if (status !== "error") setStatus(status);
@@ -101,12 +112,17 @@ function LiveConsultation({
   business,
   inquiry,
   visitDemo,
+  photoDemo,
 }: {
   business: IntakeBusiness;
   inquiry: Inquiry;
   visitDemo: boolean;
+  photoDemo: boolean;
 }) {
-  const { inquiryId, inquiryToken, expiresAt } = inquiry;
+  const { inquiryId, inquiryToken, expiresAt, photoConsent } = inquiry;
+  const [uploadPhoto] = useState(() =>
+    createCustomerPhotoUploader(inquiryId, inquiryToken),
+  );
   const [messages, setMessages] = useState<CustomerMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
@@ -188,7 +204,12 @@ function LiveConsultation({
       input,
     );
     addMessages([
-      { id: String(messageId), role: "CUSTOMER", content: input.content },
+      {
+        id: String(messageId),
+        role: "CUSTOMER",
+        content: input.content,
+        photoIds: input.photoIds,
+      },
     ]);
     setWaitingAfter(aiStatus === "PROCESSING" ? messageId : null);
   }
@@ -207,7 +228,8 @@ function LiveConsultation({
       businessName={business.name}
       messages={messages}
       fields={[]}
-      photoConsent={false}
+      photoConsent={photoConsent}
+      photosEnabled={photoDemo}
       textOnly
       canContinue={
         visitDemo &&
@@ -227,6 +249,7 @@ function LiveConsultation({
               : undefined
       }
       onSend={ended ? undefined : send}
+      onUpload={!ended && photoConsent ? uploadPhoto : undefined}
     />
   );
 }

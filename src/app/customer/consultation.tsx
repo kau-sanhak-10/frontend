@@ -33,6 +33,7 @@ type Props = {
   handler?: "AI" | "OWNER";
   canContinue?: boolean;
   textOnly?: boolean;
+  photosEnabled?: boolean;
   liveNotice?: string;
   onSend?: (input: SendCustomerInput) => Promise<void>;
   onUpload?: (file: File) => Promise<{ photoId: number }>;
@@ -51,6 +52,7 @@ export default function CustomerConsultation({
   handler = "AI",
   canContinue = false,
   textOnly = false,
+  photosEnabled = !textOnly,
   liveNotice,
   onSend,
   onUpload,
@@ -119,7 +121,9 @@ export default function CustomerConsultation({
     const added: Attachment[] = [];
     const failures: string[] = [];
     const persistedPhotoCount = new Set([
-      ...messages.flatMap((m) => m.photos?.map((p) => p.id) ?? []),
+      ...messages.flatMap(
+        (m) => m.photoIds ?? m.photos?.map((p) => p.id) ?? [],
+      ),
       ...uploaded.current.values(),
     ]).size;
     try {
@@ -331,6 +335,12 @@ export default function CustomerConsultation({
                   {message.content && (
                     <p className={styles.bubble}>{message.content}</p>
                   )}
+                  {!message.photos?.length &&
+                    Boolean(message.photoIds?.length) && (
+                      <p className={styles.bubble}>
+                        사진 {message.photoIds?.length}장 · 전송 완료
+                      </p>
+                    )}
                   {message.photos?.map((photo) => (
                     <figure key={photo.id} className={styles.sentPhoto}>
                       {/* eslint-disable-next-line @next/next/no-img-element -- 사용자 사진·짧은 유효기간 URL은 최적화 캐시에 저장하지 않는다. */}
@@ -423,7 +433,7 @@ export default function CustomerConsultation({
                 {error}
               </p>
             )}
-            {!photoConsent && !textOnly && (
+            {!photoConsent && photosEnabled && (
               <p className={styles.caption}>
                 사진 전송에 동의하지 않았어요. 글로 계속 상담할 수 있어요.
               </p>
@@ -435,7 +445,7 @@ export default function CustomerConsultation({
                 void send();
               }}
             >
-              {!textOnly && (
+              {photosEnabled && (
                 <button
                   type="button"
                   className={styles.iconButton}

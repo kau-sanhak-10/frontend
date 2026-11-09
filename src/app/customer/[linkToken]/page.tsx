@@ -26,6 +26,9 @@ export default async function Page({
       key={linkToken}
       linkToken={linkToken}
       visitDemo={visitDemo}
+      photoDemo={
+        visitDemo && process.env.CUSTOMER_PHOTO_DEMO_ENABLED === "true"
+      }
     />
   );
 }
