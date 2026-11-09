@@ -216,6 +216,30 @@ test("예약 전 접수에서도 방문 주소가 유지된다", () => {
   assert.equal(inquiry.reservation, undefined);
 });
 
+test("최근 AI 분석 실패의 확인 이유를 원문·사진과 분리해서 보여 준다", () => {
+  const reason =
+    "이번 AI 분석을 완료하지 못했어요. 고객이 보낸 대화와 사진을 확인해 주세요.";
+  const failed = {
+    ...detail,
+    status: "OWNER_CHECK",
+    ownerCheckReason: "AI_HANDOFF",
+    aiSummary: {
+      summary: null,
+      decidedAt: null,
+      nextAction: null,
+      nextActionReason: reason,
+    },
+  };
+  const inquiry = mapDetail(failed, messages);
+  assert.equal(inquiry.note, reason);
+  assert.equal(inquiry.messages.length, messages.length);
+  assert.equal(inquiry.photos.length, detail.photos.length);
+  assert.equal(
+    mapDetail({ ...failed, status: "COLLECTING" }, messages).note,
+    "",
+  );
+});
+
 test("상세 항목의 출처·미확인 이유·근거·이력을 그대로 옮긴다", () => {
   const d = mapDetail(detail, messages);
   assert.equal(d.version, 3);

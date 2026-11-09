@@ -94,7 +94,12 @@ export type ServerDetail = {
     workCategory: ServerWorkCategory | null;
   } | null;
   fields: ServerFieldDetail[];
-  aiSummary: { summary: string | null; decidedAt: string | null } | null;
+  aiSummary: {
+    summary: string | null;
+    decidedAt: string | null;
+    nextAction?: string | null;
+    nextActionReason?: string | null;
+  } | null;
   photos: { photoId: number; messageId: number | null }[];
   reservation: { status: string; startAt: string; endAt: string } | null;
   createdAt: string;
@@ -315,7 +320,11 @@ export function mapDetail(
     receivedAt: time(detail.createdAt),
     status,
     ownerCheckReason: detail.ownerCheckReason ?? undefined,
-    note: detail.aiSummary?.summary ?? "",
+    note:
+      detail.aiSummary?.summary ??
+      (status === "OWNER_CHECK" && detail.aiSummary?.nextAction === null
+        ? (detail.aiSummary.nextActionReason ?? "")
+        : ""),
     unconfirmedLabels: summary
       .filter((f) => !f.required && f.state === "UNCONFIRMED")
       .map((f) => f.label),
