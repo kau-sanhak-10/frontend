@@ -219,17 +219,12 @@ function DetailContent({
       ) : null}
 
       <div className={auth.footer}>
-        <button
-          type="button"
-          className={`${auth.button} ${auth.primary} ${auth.full}`}
-          disabled
-          aria-describedby="edit-pending"
+        <Link
+          href={`/owner/inquiries/${inquiry.id}/edit`}
+          className={`${auth.button} ${auth.primary} ${auth.full} ${styles.plainLink}`}
         >
           접수 정보 수정
-        </button>
-        <p id="edit-pending" className={auth.hint}>
-          접수 정보 수정은 준비 중이에요.
-        </p>
+        </Link>
       </div>
     </>
   );
@@ -258,6 +253,12 @@ function SummaryRow({
           <span className={styles.interpretTag}>매뉴얼 해석</span>
         ) : null}
       </dd>
+      {field.history?.length ? (
+        <dd className={styles.fieldNote}>
+          사장님이 고친 값이에요 · 이전 값:{" "}
+          {field.history.at(-1)?.value ?? "미확인"}
+        </dd>
+      ) : null}
       {field.reason || field.evidence ? (
         <dd className={styles.fieldNote}>
           {field.reason ? <span>{field.reason}</span> : null}

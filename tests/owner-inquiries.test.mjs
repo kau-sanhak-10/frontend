@@ -312,3 +312,31 @@ test("저장 실패·빈 값·다른 업체 문의는 저장하지 않는다", a
     null,
   );
 });
+
+test("수정 화면은 실제로 바뀐 항목만 저장하고 값을 지우면 막는다", async () => {
+  const { collectChanges, initialDraft } =
+    await import("../src/lib/owner-inquiries/rules.ts");
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  const draft = initialDraft(res.data.summary);
+  // 미확인 모델명은 빈칸으로 시작한다.
+  assert.equal(draft.model, "");
+  assert.equal(draft.manufacturer, "경동나비엔");
+
+  // 아무것도 안 바꾸면 보낼 것이 없다. 미확인을 비워 둬도 오류가 아니다.
+  assert.deepEqual(collectChanges(res.data.summary, draft), {
+    changes: [],
+    errors: {},
+  });
+
+  // 바꾼 항목만 보낸다. 앞뒤 공백은 지운다.
+  const edited = { ...draft, model: " NCB353 " };
+  assert.deepEqual(collectChanges(res.data.summary, edited).changes, [
+    { key: "model", value: "NCB353" },
+  ]);
+
+  // 값이 있던 항목을 지우면 저장하지 않고 이유를 알려 준다.
+  const cleared = { ...draft, manufacturer: "  " };
+  const result = collectChanges(res.data.summary, cleared);
+  assert.deepEqual(result.changes, []);
+  assert.ok(result.errors.manufacturer);
+});
