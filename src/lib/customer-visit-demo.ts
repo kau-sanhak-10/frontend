@@ -3,10 +3,10 @@ import { isIntakeLinkToken } from "./customer-api.ts";
 // ponytail: 시연용 두 지점만 사용한다. 일반 주소→좌표 검색은 BE-15에 연결한다.
 export const demoVisitLocations = {
   origin: {
-    name: "화전동 보일러 판매처",
-    address: "경기 고양시 덕양구 중앙로 121",
-    lat: 37.5991755,
-    lng: 126.8733271,
+    name: "이레엔지니어링",
+    address: "경기 고양시 덕양구 화전동 229-56",
+    lat: 37.5997268,
+    lng: 126.8729409,
   },
   destination: {
     name: "한국항공대학교",
