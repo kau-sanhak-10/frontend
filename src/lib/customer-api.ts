@@ -71,6 +71,31 @@ export async function getCustomerInquiryVersion(
   return readInquiryVersion(path, inquiryId, { headers, signal });
 }
 
+export async function isWaitingForOwner(
+  inquiryId: number,
+  token: string,
+  signal: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const result = await requestApi<{ inquiryId: number; status: string }>(path, {
+    headers,
+    signal,
+  });
+  if (
+    result?.inquiryId !== inquiryId ||
+    ![
+      "COLLECTING",
+      "SCHEDULING",
+      "OWNER_CHECK",
+      "BOOKED",
+      "UNSERVICEABLE",
+      "CLOSED",
+    ].includes(result.status)
+  )
+    throw new Error("Invalid inquiry status");
+  return result.status === "OWNER_CHECK";
+}
+
 export async function saveCustomerVisitInfo(
   inquiryId: number,
   token: string,

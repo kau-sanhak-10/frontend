@@ -12,6 +12,7 @@ import {
   getCustomerIntake,
   getCustomerInquiryVersion,
   getCustomerMessages,
+  isWaitingForOwner,
   requestCustomerHandoff,
   saveCustomerVisitInfo,
   sendCustomerMessage,
@@ -29,6 +30,19 @@ test("방문 시연은 지정된 테스트 링크와 개발 서버에서만 열�
   for (const url of [undefined, "https://api.illo.ai.kr", `${dev}.example`]) {
     assert.equal(isVisitDemoLink(link, link, url), false);
   }
+});
+
+test("사장님 확인은 동일 문의의 서버 상태로만 판정한다", async () => {
+  const signal = new AbortController().signal;
+  respond({ inquiryId: 10, status: "COLLECTING" });
+  assert.equal(await isWaitingForOwner(10, "inq_test", signal), false);
+  respond({ inquiryId: 10, status: "OWNER_CHECK" });
+  assert.equal(await isWaitingForOwner(10, "inq_test", signal), true);
+  respond({ inquiryId: 11, status: "OWNER_CHECK" });
+  await assert.rejects(
+    isWaitingForOwner(10, "inq_test", signal),
+    /Invalid inquiry status/,
+  );
 });
 
 test("짧은 Dev 업체 링크는 지정된 시연 경로에서만 조회한다", async () => {

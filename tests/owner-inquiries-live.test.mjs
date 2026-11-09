@@ -441,7 +441,7 @@ test("목록은 마지막 쪽까지 이어서 불러온다", async () => {
   );
 });
 
-test("상세 사진에 보기용 주소를 붙이고, 한 장이 실패해도 상세는 보여 준다", async () => {
+test("상세 사진은 같은 ID의 주소만 붙이고, 한 장이 실패해도 상세는 보여 준다", async () => {
   const { fetchInquiryDetailLive } =
     await import("../src/lib/owner-inquiries/live-api.ts");
   const twoPhotos = {
@@ -472,10 +472,12 @@ test("상세 사진에 보기용 주소를 붙이고, 한 장이 실패해도 �
         expiresAt: "2026-11-09T10:10:00+09:00",
       });
     }
-    return [
-      500,
-      { success: false, code: "INTERNAL", message: "오류", result: null },
-    ];
+    // 8번 사진 조회에 7번 주소를 응답하면 엉뚱한 근거 사진을 보여주지 않는다.
+    return ok({
+      photoId: 7,
+      url: "https://files.example.test/7.jpg?sig=b",
+      expiresAt: "2026-11-09T10:10:00+09:00",
+    });
   });
   const res = await fetchInquiryDetailLive("own_token", "12");
   assert.equal(res.ok, true);

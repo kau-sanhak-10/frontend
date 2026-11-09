@@ -120,7 +120,7 @@ async function withPhotoUrls(
     detail.photos.map((photo) =>
       requestApi<ServerPhotoUrl>(
         `/api/v1/owner/inquiries/${encodeURIComponent(detail.id)}/photos/${encodeURIComponent(photo.id)}/url`,
-        { headers: auth(token) },
+        { headers: auth(token), signal: AbortSignal.timeout(5000) },
       ),
     ),
   );
@@ -128,13 +128,13 @@ async function withPhotoUrls(
     ...detail,
     photos: detail.photos.map((photo, i) => {
       const r = results[i];
-      return r.status === "fulfilled" && r.value.url
-        ? {
-            ...photo,
-            url: r.value.url,
-            expiresAt: Date.parse(r.value.expiresAt),
-          }
-        : photo;
+      if (r.status !== "fulfilled" || String(r.value?.photoId) !== photo.id)
+        return photo;
+      const { url, expiresAt } = r.value;
+      const expires = Date.parse(expiresAt);
+      if (typeof url !== "string" || !url.trim() || !Number.isFinite(expires))
+        return photo;
+      return { ...photo, url, expiresAt: expires };
     }),
   };
 }

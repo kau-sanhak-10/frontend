@@ -29,8 +29,20 @@ export function OwnerPhoto({ photo }: { photo?: InquiryPhoto }) {
     refresh();
     return true;
   }
-  if (!photo?.url) {
+  if (!photo) {
     return <span className={styles.photoThumb}>사진 없음</span>;
+  }
+  if (!photo.url) {
+    return (
+      <span className={styles.photoFailure} role="status">
+        첨부 사진을 불러오지 못했어요.
+        {refresh && (
+          <button type="button" onClick={refresh}>
+            다시 시도
+          </button>
+        )}
+      </span>
+    );
   }
   // 서버 응답에 잘못된 스킴이 섞여도 링크로 실행하지 않는다.
   let url: URL;
@@ -79,6 +91,7 @@ export function OwnerPhoto({ photo }: { photo?: InquiryPhoto }) {
             className={styles.photoThumb}
             src={photo.url}
             alt={photo.alt}
+            referrerPolicy="no-referrer"
             onError={() => {
               // 만료로 못 불러왔으면 한 번은 조용히 새 주소를 받습니다.
               if (!(isExpired(photo) && !renewing && renew())) setFailed(true);
