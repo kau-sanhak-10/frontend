@@ -97,6 +97,21 @@ function LiveConsultation({
   const [messages, setMessages] = useState<CustomerMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [waitingAfter, setWaitingAfter] = useState<number | null>(null);
+  const [slowAfter, setSlowAfter] = useState<number | null>(null);
+  const waitingForReply =
+    waitingAfter !== null &&
+    !messages.some(
+      (message) =>
+        (message.role === "AI" || message.role === "OWNER") &&
+        Number(message.id) > waitingAfter,
+    );
+
+  useEffect(() => {
+    if (!waitingForReply || ended) return;
+    const timer = setTimeout(() => setSlowAfter(waitingAfter), 12_000);
+    return () => clearTimeout(timer);
+  }, [ended, waitingAfter, waitingForReply]);
 
   function addMessages(newMessages: CustomerMessage[]) {
     if (!newMessages.length) return;
@@ -153,7 +168,7 @@ function LiveConsultation({
   }, [inquiryId, inquiryToken, expiresAt]);
 
   async function send(input: SendCustomerInput) {
-    const { messageId } = await sendCustomerMessage(
+    const { messageId, aiStatus } = await sendCustomerMessage(
       inquiryId,
       inquiryToken,
       input,
@@ -161,6 +176,7 @@ function LiveConsultation({
     addMessages([
       { id: String(messageId), role: "CUSTOMER", content: input.content },
     ]);
+    setWaitingAfter(aiStatus === "PROCESSING" ? messageId : null);
   }
 
   return (
@@ -175,7 +191,11 @@ function LiveConsultation({
           ? "이 상담에 더 이상 접근할 수 없어요. 업체에 문의해 주세요."
           : loadFailed
             ? "새 답변을 불러오지 못했어요. 연결되면 다시 확인할게요."
-            : undefined
+            : waitingForReply
+              ? slowAfter === waitingAfter
+                ? "보낸 내용은 저장됐어요. 아직 답변이 도착하지 않았어요."
+                : "메시지를 보냈어요. 답변을 기다리고 있어요."
+              : undefined
       }
       onSend={ended ? undefined : send}
     />

@@ -8,6 +8,8 @@ import {
 } from "../src/lib/customer-consultation.ts";
 import {
   createCustomerInquiry,
+  getCustomerInquiryVersion,
+  saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
 
@@ -148,4 +150,53 @@ test("입력·권한 정보가 잘못되면 요청하지 않고 잘못된 성공
     }),
   );
   assert.equal(fetch.mock.callCount(), 2);
+});
+
+test("방문정보는 같은 문의에 버전과 검증된 좌표로 저장하고 다른 문의 응답을 거절한다", async () => {
+  const fetch = respond({ inquiryId: 10, version: 3 });
+  const version = await getCustomerInquiryVersion(10, "inq_test");
+  const visit = {
+    name: " 테스트 ",
+    phone: "010-1234-5678",
+    address: " 테스트 주소 ",
+    addressDetail: " ",
+    accessNote: "",
+    workTypeId: "",
+  };
+  await assert.rejects(
+    saveCustomerVisitInfo(10, "inq_test", version, visit, {
+      lat: NaN,
+      lng: 127,
+    }),
+  );
+  assert.equal(fetch.mock.callCount(), 1);
+  assert.equal(
+    await saveCustomerVisitInfo(10, "inq_test", version, visit, {
+      lat: 37,
+      lng: 127,
+    }),
+    3,
+  );
+  const [url, request] = fetch.mock.calls[1].arguments;
+  assert.equal(
+    new URL(url).pathname,
+    "/api/v1/customer/inquiries/10/visit-info",
+  );
+  assert.equal(request.method, "PUT");
+  assert.equal(
+    new Headers(request.headers).get("Authorization"),
+    "Bearer inq_test",
+  );
+  assert.deepEqual(JSON.parse(request.body), {
+    version: 3,
+    name: "테스트",
+    phone: "01012345678",
+    address: "테스트 주소",
+    addressDetail: null,
+    lat: 37,
+    lng: 127,
+    accessNote: null,
+    workCategory: null,
+  });
+  await assert.rejects(getCustomerInquiryVersion(11, "inq_test"));
 });

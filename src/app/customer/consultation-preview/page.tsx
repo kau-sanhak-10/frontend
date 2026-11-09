@@ -14,7 +14,7 @@ export default async function ConsultationPreviewPage({
     ["start", "chat", "retake", "summary"].find(
       (value) => value === query.scene,
     ) ?? "start";
-  const failure = ["send", "upload", "handoff", "expired"].find(
+  const failure = ["send", "upload", "handoff", "expired", "visit"].find(
     (value) => value === query.fail,
   );
   return <ConsultationPreviewFlow scene={scene} failure={failure} />;

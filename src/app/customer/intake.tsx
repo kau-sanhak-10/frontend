@@ -7,6 +7,7 @@ import {
   emptyVisitInfo,
   intakeStatusCopy,
   validateVisitInfo,
+  visitAccessNoteMaxLength,
   type IntakeBusiness,
   type IntakeStatus,
   type VisitErrors,
@@ -536,7 +537,7 @@ export default function CustomerIntake({
                     {field("accessNote", "추가 요청", {
                       optional: true,
                       placeholder: "주차·출입 안내를 적어주세요.",
-                      maxLength: 500,
+                      maxLength: visitAccessNoteMaxLength,
                     })}
                   </fieldset>
                 </form>

@@ -3,7 +3,7 @@ import type {
   CustomerMessage,
   SendCustomerInput,
 } from "./customer-consultation.ts";
-import type { IntakeBusiness } from "./customer-intake.ts";
+import type { IntakeBusiness, VisitInfo } from "./customer-intake.ts";
 
 const categoryNames: Record<string, string> = {
   INSPECTION: "점검",
@@ -24,6 +24,86 @@ type IntakeResponse = {
 
 export function isIntakeLinkToken(token: string) {
   return /^[A-Za-z0-9_-]{43}$/.test(token);
+}
+
+function inquiryAccess(inquiryId: number, token: string) {
+  if (
+    !Number.isSafeInteger(inquiryId) ||
+    inquiryId <= 0 ||
+    !token.trim() ||
+    /[\r\n]/.test(token)
+  )
+    throw new Error("Invalid inquiry access");
+  return {
+    path: `/api/v1/customer/inquiries/${inquiryId}`,
+    headers: { Authorization: `Bearer ${token}` },
+  };
+}
+
+async function readInquiryVersion(
+  path: string,
+  inquiryId: number,
+  options: RequestInit,
+) {
+  const value = await requestApi<{ inquiryId: number; version: number }>(
+    path,
+    options,
+  );
+  if (
+    value?.inquiryId !== inquiryId ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0
+  )
+    throw new Error("Invalid inquiry version");
+  return value.version;
+}
+
+export async function getCustomerInquiryVersion(
+  inquiryId: number,
+  token: string,
+  signal?: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  return readInquiryVersion(path, inquiryId, { headers, signal });
+}
+
+export async function saveCustomerVisitInfo(
+  inquiryId: number,
+  token: string,
+  version: number,
+  visit: VisitInfo,
+  coordinates: { lat: number; lng: number },
+  signal?: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const { lat, lng } = coordinates;
+  // 좌표는 확인된 기본주소와 함께 전달한다. 좌표가 없다고 임의 위치를 보내지 않는다.
+  if (
+    !Number.isSafeInteger(version) ||
+    version < 0 ||
+    !Number.isFinite(lat) ||
+    Math.abs(lat) > 90 ||
+    !Number.isFinite(lng) ||
+    Math.abs(lng) > 180 ||
+    (visit.workTypeId && !Object.hasOwn(categoryNames, visit.workTypeId))
+  )
+    throw new Error("Invalid visit information");
+  return readInquiryVersion(`${path}/visit-info`, inquiryId, {
+    method: "PUT",
+    signal,
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      version,
+      name: visit.name.trim(),
+      phone: visit.phone.replace(/[\s-]/g, ""),
+      address: visit.address.trim(),
+      addressDetail: visit.addressDetail.trim() || null,
+      lat,
+      lng,
+      accessNote: visit.accessNote.trim() || null,
+      workCategory: visit.workTypeId || null,
+    }),
+  });
 }
 
 export async function getCustomerIntake(
@@ -69,6 +149,7 @@ export async function getCustomerMessages(
   afterId: number,
   signal: AbortSignal,
 ) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
   const suffix = afterId ? `?afterId=${afterId}` : "";
   const value = await requestApi<{
     messages: {
@@ -78,10 +159,7 @@ export async function getCustomerMessages(
       deliveryStatus: string;
     }[];
     hasMore: boolean;
-  }>(`/api/v1/customer/inquiries/${inquiryId}/messages${suffix}`, {
-    signal,
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  }>(`${path}/messages${suffix}`, { signal, headers });
   if (
     !value ||
     !Array.isArray(value.messages) ||
@@ -163,13 +241,7 @@ export async function sendCustomerMessage(
   input: SendCustomerInput,
   signal?: AbortSignal,
 ) {
-  if (
-    !Number.isSafeInteger(inquiryId) ||
-    inquiryId <= 0 ||
-    !token.trim() ||
-    /[\r\n]/.test(token)
-  )
-    throw new Error("Invalid inquiry access");
+  const { path, headers } = inquiryAccess(inquiryId, token);
   const content = input.content.trim();
   if (
     !input.clientMsgId ||
@@ -177,18 +249,12 @@ export async function sendCustomerMessage(
     input.photoIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
   )
     throw new Error("Invalid message");
-  const value = await requestApi<unknown>(
-    `/api/v1/customer/inquiries/${inquiryId}/messages`,
-    {
-      method: "POST",
-      signal,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ...input, content: content || null }),
-    },
-  );
+  const value = await requestApi<unknown>(`${path}/messages`, {
+    method: "POST",
+    signal,
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, content: content || null }),
+  });
   if (
     !value ||
     typeof value !== "object" ||
