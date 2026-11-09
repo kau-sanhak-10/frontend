@@ -35,6 +35,24 @@ export type WorkType = {
   durationMinutes: number;
   autoBookingAllowed: boolean;
 };
+
+export function setWorkTypeActive(
+  work: WorkType,
+  isActive: boolean,
+  saved: WorkType[],
+): WorkType {
+  return isActive
+    ? { ...work, isActive: true }
+    : {
+        ...work,
+        isActive: false,
+        durationMinutes:
+          saved.find((item) => item.workCategory === work.workCategory)
+            ?.durationMinutes ?? 60,
+        autoBookingAllowed: false,
+      };
+}
+
 export type ServiceArea = { regionCode: string; regionName: string };
 export type SettingsData = {
   business: BusinessInfo;
@@ -46,6 +64,61 @@ export type SettingsData = {
 export type SettingsSection =
   "business" | "regions" | "hours" | "work" | "intake";
 export type SettingErrors = Record<string, string>;
+const changed = (draft: unknown, saved: unknown) =>
+  JSON.stringify(draft) !== JSON.stringify(saved);
+
+export function isSettingsSectionDirty(
+  section: SettingsSection,
+  draft: SettingsData,
+  saved: SettingsData,
+): boolean {
+  switch (section) {
+    case "business":
+      return changed(draft.business, saved.business);
+    case "regions":
+      return changed(draft.serviceAreas, saved.serviceAreas);
+    case "hours":
+      return changed(
+        { ...draft.booking, autoBookingEnabled: false },
+        { ...saved.booking, autoBookingEnabled: false },
+      );
+    case "work":
+      return changed(draft.workTypes, saved.workTypes);
+    case "intake":
+      return (
+        draft.intakePaused !== saved.intakePaused ||
+        draft.booking.autoBookingEnabled !== saved.booking.autoBookingEnabled
+      );
+  }
+}
+
+export function refreshSettingsDraft(
+  section: SettingsSection,
+  draft: SettingsData,
+  previous: SettingsData,
+  saved: SettingsData,
+): SettingsData {
+  const keep = (other: SettingsSection) =>
+    section !== other && isSettingsSectionDirty(other, draft, previous);
+  return {
+    business: keep("business") ? draft.business : saved.business,
+    serviceAreas: keep("regions") ? draft.serviceAreas : saved.serviceAreas,
+    workTypes: keep("work") ? draft.workTypes : saved.workTypes,
+    booking: {
+      ...(keep("hours") ? draft.booking : saved.booking),
+      autoBookingEnabled:
+        section !== "intake" &&
+        draft.booking.autoBookingEnabled !== previous.booking.autoBookingEnabled
+          ? draft.booking.autoBookingEnabled
+          : saved.booking.autoBookingEnabled,
+    },
+    intakePaused:
+      section !== "intake" && draft.intakePaused !== previous.intakePaused
+        ? draft.intakePaused
+        : saved.intakePaused,
+  };
+}
+
 const time = (v: unknown): v is string =>
   typeof v === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v);
 const integer = (v: unknown, min: number, max = 1440): v is number =>
@@ -55,9 +128,13 @@ export function validateBusiness(value: BusinessInfo): SettingErrors {
   const errors: SettingErrors = {};
   if (!value.businessName.trim() || value.businessName.trim().length > 100)
     errors.businessName = "업체명을 1~100자로 입력해 주세요.";
+  // BE-03 PhoneNumbers: 대표 연락처는 국내 휴대전화·지역번호·대표번호를 받는다.
   if (
     value.contactPhone !== null &&
-    !/^\+?[0-9][0-9\s()-]{7,19}$/.test(value.contactPhone)
+    (!/^\+?[0-9][0-9\s()-]{7,19}$/.test(value.contactPhone) ||
+      !/^(?:0\d{8,10}|1[5-9]\d{6})$/.test(
+        value.contactPhone.replace(/\D/g, ""),
+      ))
   )
     errors.contactPhone = "대표 연락처를 확인해 주세요.";
   if ((value.address?.length ?? 0) > 255)

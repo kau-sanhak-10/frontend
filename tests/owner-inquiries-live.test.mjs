@@ -207,6 +207,15 @@ test("홈의 오늘 방문을 목록 문의에 붙인다", () => {
   );
 });
 
+test("예약 전 접수에서도 방문 주소가 유지된다", () => {
+  const inquiry = mapDetail(
+    { ...detail, status: "COLLECTING", reservation: null },
+    [],
+  );
+  assert.equal(inquiry.visitAddress, detail.visitInfo.address);
+  assert.equal(inquiry.reservation, undefined);
+});
+
 test("상세 항목의 출처·미확인 이유·근거·이력을 그대로 옮긴다", () => {
   const d = mapDetail(detail, messages);
   assert.equal(d.version, 3);

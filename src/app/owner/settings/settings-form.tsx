@@ -14,6 +14,9 @@ import {
   validateServiceAreas,
   nullableText,
   missingAutoBookingSetup,
+  isSettingsSectionDirty,
+  refreshSettingsDraft,
+  setWorkTypeActive,
 } from "@/lib/owner-settings";
 import common from "../_components/owner-auth.module.css";
 import styles from "./settings.module.css";
@@ -25,6 +28,7 @@ const sections: Record<SettingsSection, string> = {
   work: "작업시간",
   intake: "접수·예약",
 };
+const sectionKeys = Object.keys(sections) as SettingsSection[];
 const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
 const subscribe = () => () => {};
 
@@ -86,7 +90,9 @@ export default function SettingsForm({
   const heading = useRef<HTMLHeadingElement>(null);
   const lock = useRef(false);
   const mounted = useRef(true);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  const dirty = sectionKeys.some((key) =>
+    isSettingsSectionDirty(key, draft, saved),
+  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -109,34 +115,11 @@ export default function SettingsForm({
   }
   function cancel() {
     if (!section) return;
-    setDraft((d) =>
-      section === "business"
-        ? { ...d, business: saved.business }
-        : section === "regions"
-          ? { ...d, serviceAreas: saved.serviceAreas }
-          : section === "hours"
-            ? {
-                ...d,
-                booking: {
-                  ...saved.booking,
-                  autoBookingEnabled: d.booking.autoBookingEnabled,
-                },
-              }
-            : section === "work"
-              ? { ...d, workTypes: saved.workTypes }
-              : {
-                  ...d,
-                  intakePaused: saved.intakePaused,
-                  booking: {
-                    ...d.booking,
-                    autoBookingEnabled: saved.booking.autoBookingEnabled,
-                  },
-                },
-    );
+    setDraft((d) => refreshSettingsDraft(section, d, saved, saved));
     setErrors({});
     setNotice("이 항목의 변경을 취소했어요.");
   }
-  async function save() {
+  async function save(form: HTMLFormElement) {
     if (!section || lock.current) return;
     const candidate =
       section === "business"
@@ -162,40 +145,24 @@ export default function SettingsForm({
             ? validateBooking(draft.booking)
             : section === "work"
               ? validateWorkTypes(draft.workTypes)
-              : {};
+              : candidate.booking.autoBookingEnabled && autoBookingError
+                ? { auto: autoBookingError }
+                : {};
     setErrors(found);
     setNotice("");
-    if (Object.keys(found).length) return;
+    if (Object.keys(found).length) {
+      requestAnimationFrame(() =>
+        form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus(),
+      );
+      return;
+    }
     lock.current = true;
     setBusy(true);
     try {
       const result = await onSave(section, candidate);
       if (!mounted.current) return;
       setSaved(result);
-      setDraft((d) =>
-        section === "business"
-          ? { ...d, business: result.business }
-          : section === "regions"
-            ? { ...d, serviceAreas: result.serviceAreas }
-            : section === "hours"
-              ? {
-                  ...d,
-                  booking: {
-                    ...result.booking,
-                    autoBookingEnabled: d.booking.autoBookingEnabled,
-                  },
-                }
-              : section === "work"
-                ? { ...d, workTypes: result.workTypes }
-                : {
-                    ...d,
-                    intakePaused: result.intakePaused,
-                    booking: {
-                      ...d.booking,
-                      autoBookingEnabled: result.booking.autoBookingEnabled,
-                    },
-                  },
-      );
+      setDraft((d) => refreshSettingsDraft(section, d, saved, result));
       setNotice(
         preview ? "이 항목을 미리보기에 저장했어요." : "이 항목을 저장했어요.",
       );
@@ -231,21 +198,11 @@ export default function SettingsForm({
     }));
   }
   const missing = missingAutoBookingSetup(saved);
+  const autoBookingError = missing.length
+    ? `먼저 ${missing.join(" · ")}을 저장해 주세요.`
+    : "";
   const selectedDirty =
-    section === "business"
-      ? JSON.stringify(draft.business) !== JSON.stringify(saved.business)
-      : section === "regions"
-        ? JSON.stringify(draft.serviceAreas) !==
-          JSON.stringify(saved.serviceAreas)
-        : section === "hours"
-          ? JSON.stringify({ ...draft.booking, autoBookingEnabled: false }) !==
-            JSON.stringify({ ...saved.booking, autoBookingEnabled: false })
-          : section === "work"
-            ? JSON.stringify(draft.workTypes) !==
-              JSON.stringify(saved.workTypes)
-            : draft.intakePaused !== saved.intakePaused ||
-              draft.booking.autoBookingEnabled !==
-                saved.booking.autoBookingEnabled;
+    section !== null && isSettingsSectionDirty(section, draft, saved);
 
   return (
     <main className={`${common.page} ${styles.page}`}>
@@ -286,7 +243,7 @@ export default function SettingsForm({
             </p>
           </div>
           <nav aria-label="업체 설정 항목" className={styles.menu}>
-            {(Object.keys(sections) as SettingsSection[]).map((key) => (
+            {sectionKeys.map((key) => (
               <button
                 key={key}
                 type="button"
@@ -331,7 +288,7 @@ export default function SettingsForm({
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
-            void save();
+            void save(e.currentTarget);
           }}
         >
           <fieldset disabled={busy} className={styles.fields}>
@@ -651,25 +608,21 @@ export default function SettingsForm({
                       <input
                         type="checkbox"
                         checked={w.isActive}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            workTypes: draft.workTypes.map((v, n) =>
-                              n === i
-                                ? {
-                                    ...v,
-                                    isActive: e.target.checked,
-                                    durationMinutes: e.target.checked
-                                      ? v.durationMinutes
-                                      : saved.workTypes[i].durationMinutes,
-                                    autoBookingAllowed: e.target.checked
-                                      ? v.autoBookingAllowed
-                                      : false,
-                                  }
+                        onChange={(e) => {
+                          const isActive = e.target.checked;
+                          setDraft((current) => ({
+                            ...current,
+                            workTypes: current.workTypes.map((v) =>
+                              v.workCategory === w.workCategory
+                                ? setWorkTypeActive(
+                                    v,
+                                    isActive,
+                                    saved.workTypes,
+                                  )
                                 : v,
                             ),
-                          })
-                        }
+                          }));
+                        }}
                       />
                       <strong>{workCategories[w.workCategory]}</strong>
                     </label>
@@ -774,10 +727,8 @@ export default function SettingsForm({
                       type="checkbox"
                       checked={draft.booking.autoBookingEnabled}
                       onChange={(e) => {
-                        if (e.target.checked && missing.length) {
-                          setErrors({
-                            auto: `먼저 ${missing.join(" · ")}을 저장해 주세요.`,
-                          });
+                        if (e.target.checked && autoBookingError) {
+                          setErrors({ auto: autoBookingError });
                           return;
                         }
                         setErrors({});

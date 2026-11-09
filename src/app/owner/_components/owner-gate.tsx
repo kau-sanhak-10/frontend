@@ -14,7 +14,7 @@ type OwnerGateProps = {
   screenName: string;
   children: (ctx: {
     session: OwnerSession;
-    /** 실제 로그인은 서버에서, 화면 확인용 로그인은 예시 데이터에서 읽습니다. */
+    /** 실제 로그인은 서버에서, 예시 로그인은 예시 데이터에서 조회합니다. */
     source: InquirySource;
   }) => React.ReactNode;
 };
@@ -27,16 +27,16 @@ export function OwnerGate({ screenName, children }: OwnerGateProps) {
   const router = useRouter();
   const state = useOwnerBusiness();
   const businessId = state.status === "ready" ? state.businessId : null;
-  const token = state.status === "live" ? state.session.accessToken : null;
+  const liveToken = state.status === "live" ? state.session.accessToken : null;
   // 화면이 다시 그려져도 같은 값을 유지해야 조회가 반복되지 않습니다.
   const source = useMemo<InquirySource | null>(
     () =>
-      token
-        ? { kind: "live", token }
+      liveToken
+        ? { kind: "live", token: liveToken }
         : businessId
           ? { kind: "mock", businessId }
           : null,
-    [businessId, token],
+    [businessId, liveToken],
   );
 
   useEffect(() => {
@@ -87,7 +87,7 @@ export function OwnerGate({ screenName, children }: OwnerGateProps) {
 
   return (
     <>
-      {state.status === "ready" && (
+      {source?.kind === "mock" && (
         <p className={styles.previewNotice} role="note">
           화면 확인용 · 예시 접수와 예약입니다.
         </p>

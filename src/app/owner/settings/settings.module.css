@@ -43,6 +43,7 @@
   font-size: 1.375rem;
   line-height: 1.5;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .menu {
   display: flex;
