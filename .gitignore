@@ -27,6 +27,8 @@ yarn-debug.*
 yarn-error.*
 *.log
 logs/
+
+### Local UI review evidence ###
 .impeccable/review/
 
 ### IDE ###

@@ -59,7 +59,7 @@ test("입력 길이 상한과 빈 선택정보를 처리하고 원본을 바꾸�
     name: "가".repeat(51),
     address: "가".repeat(201),
     addressDetail: "가".repeat(201),
-    accessNote: "가".repeat(501),
+    accessNote: "가".repeat(256),
   };
   const original = structuredClone(input);
   assert.deepEqual(Object.keys(validateVisitInfo(input, [])), [
