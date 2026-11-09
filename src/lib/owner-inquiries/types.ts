@@ -17,10 +17,15 @@ export type InquiryStatus =
  * 참고정보 미확인(예: 모델명을 못 읽음)은 여기에 넣지 않습니다.
  */
 export type OwnerCheckReason =
-  "REQUIRED_INFO_MISSING" | "SAFETY" | "CUSTOMER_REQUEST" | "SCHEDULE_CHANGE";
+  | "REQUIRED_INFO_MISSING"
+  | "SAFETY"
+  | "CUSTOMER_REQUEST"
+  | "SCHEDULE_CHANGE"
+  /** 덕구(AI)가 판단이 불명확하거나 실패해서 사장님에게 넘김 (백엔드 AI_HANDOFF) */
+  | "AI_HANDOFF";
 
-/** 요약 항목의 출처 (B-13) */
-export type SummarySource = "CUSTOMER" | "PHOTO" | "OWNER" | "MANUAL";
+/** 요약 항목의 출처 (B-13). NONE은 아직 아무도 알려 주지 않은 항목입니다. */
+export type SummarySource = "CUSTOMER" | "PHOTO" | "OWNER" | "MANUAL" | "NONE";
 
 /**
  * 요약 항목의 확인 상태
@@ -39,6 +44,7 @@ export type SummaryField = {
   key:
     | "manufacturer"
     | "model"
+    | "boilerType"
     | "errorCode"
     | "symptom"
     | "address"

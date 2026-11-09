@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchInquiryDetail } from "@/lib/owner-inquiries/mock-api";
+import {
+  loadInquiryDetail,
+  type InquirySource,
+} from "@/lib/owner-inquiries/source";
 import type { InquiryDetail, LoadResult } from "@/lib/owner-inquiries/types";
 
 /** 접수 상세·대화 화면이 함께 쓰는 상세 조회. null이면 불러오는 중입니다. */
-export function useInquiryDetail(businessId: string, inquiryId: string) {
+export function useInquiryDetail(source: InquirySource, inquiryId: string) {
   const [result, setResult] = useState<LoadResult<InquiryDetail> | null>(null);
   // '오늘·어제' 기준 시각. 불러온 시점으로 고정합니다.
   const [loadedAt, setLoadedAt] = useState(0);
@@ -15,12 +18,12 @@ export function useInquiryDetail(businessId: string, inquiryId: string) {
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setResult(null);
-    const res = await fetchInquiryDetail(businessId, inquiryId);
+    const res = await loadInquiryDetail(source, inquiryId);
     if (id === requestId.current) {
       setLoadedAt(Date.now());
       setResult(res);
     }
-  }, [businessId, inquiryId]);
+  }, [source, inquiryId]);
 
   useEffect(() => {
     // 화면에 들어오면 한 번 불러옵니다.

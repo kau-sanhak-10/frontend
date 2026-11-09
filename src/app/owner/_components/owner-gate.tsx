@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { StatusPanel } from "./status-panel";
 import styles from "./owner-auth.module.css";
 import type { OwnerSession } from "@/lib/owner-auth/session";
 import { useOwnerBusiness } from "@/lib/owner-inquiries/use-owner-business";
+import type { InquirySource } from "@/lib/owner-inquiries/source";
 
 type OwnerGateProps = {
   /** 로그인 안내 문구에 쓸 화면 이름 (예: "접수함") */
   screenName: string;
   children: (ctx: {
     session: OwnerSession;
-    businessId: string;
+    /** 데이터를 가져올 곳. 지금은 예시 로그인(mock)만, FE-07 실제 로그인이 들어오면 live */
+    source: InquirySource;
   }) => React.ReactNode;
 };
 
@@ -24,6 +26,12 @@ type OwnerGateProps = {
 export function OwnerGate({ screenName, children }: OwnerGateProps) {
   const router = useRouter();
   const state = useOwnerBusiness();
+  const businessId = state.status === "ready" ? state.businessId : null;
+  // 화면이 다시 그려져도 같은 값을 유지해야 조회가 반복되지 않습니다.
+  const source = useMemo<InquirySource | null>(
+    () => (businessId ? { kind: "mock", businessId } : null),
+    [businessId],
+  );
 
   useEffect(() => {
     if (state.status === "expired") {
@@ -76,7 +84,7 @@ export function OwnerGate({ screenName, children }: OwnerGateProps) {
       <p className={styles.previewNotice} role="note">
         화면 확인용 · 예시 접수와 예약입니다.
       </p>
-      {children({ session: state.session, businessId: state.businessId })}
+      {source ? children({ session: state.session, source }) : null}
     </>
   );
 }

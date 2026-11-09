@@ -70,6 +70,7 @@ export const OWNER_CHECK_REASON_LABEL: Record<OwnerCheckReason, string> = {
   SAFETY: "안전 확인",
   CUSTOMER_REQUEST: "고객 상담 요청",
   SCHEDULE_CHANGE: "방문시간 변경",
+  AI_HANDOFF: "덕구 판단 확인",
 };
 
 export const STATUS_LABEL: Record<InquiryStatus, string> = {
@@ -85,6 +86,7 @@ export const SOURCE_LABEL: Record<SummaryField["source"], string> = {
   PHOTO: "사진",
   OWNER: "사장님 확인",
   MANUAL: "매뉴얼",
+  NONE: "아직 없음",
 };
 
 /** 오늘 방문 예정 (홈 B01 '오늘 방문'). 시작 시각 순으로 정렬합니다. */
@@ -115,6 +117,7 @@ export function displayValue(field: SummaryField): string {
 const PRODUCT_KEYS: SummaryField["key"][] = [
   "manufacturer",
   "model",
+  "boilerType",
   "errorCode",
   "expectedCause",
 ];

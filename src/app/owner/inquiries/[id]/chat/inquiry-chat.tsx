@@ -1,5 +1,7 @@
 "use client";
 
+import type { InquirySource } from "@/lib/owner-inquiries/source";
+
 import Link from "next/link";
 import { OwnerGate } from "../../../_components/owner-gate";
 import { OwnerPhoto } from "../../../_components/owner-photo";
@@ -16,21 +18,19 @@ const SENDER_LABEL = { CUSTOMER: "고객", DUKGU: "덕구", OWNER: "사장님" }
 export function InquiryChatView({ inquiryId }: { inquiryId: string }) {
   return (
     <OwnerGate screenName="고객과 대화">
-      {({ businessId }) => (
-        <ChatBody businessId={businessId} inquiryId={inquiryId} />
-      )}
+      {({ source }) => <ChatBody source={source} inquiryId={inquiryId} />}
     </OwnerGate>
   );
 }
 
 function ChatBody({
-  businessId,
+  source,
   inquiryId,
 }: {
-  businessId: string;
+  source: InquirySource;
   inquiryId: string;
 }) {
-  const { result, loadedAt, reload } = useInquiryDetail(businessId, inquiryId);
+  const { result, loadedAt, reload } = useInquiryDetail(source, inquiryId);
 
   return (
     <main className={auth.page}>

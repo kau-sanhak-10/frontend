@@ -1,5 +1,7 @@
 "use client";
 
+import type { InquirySource } from "@/lib/owner-inquiries/source";
+
 import Link from "next/link";
 import { OwnerGate } from "../../_components/owner-gate";
 import { OwnerPhoto } from "../../_components/owner-photo";
@@ -30,21 +32,19 @@ import type {
 export function InquiryDetailView({ inquiryId }: { inquiryId: string }) {
   return (
     <OwnerGate screenName="접수 상세">
-      {({ businessId }) => (
-        <DetailBody businessId={businessId} inquiryId={inquiryId} />
-      )}
+      {({ source }) => <DetailBody source={source} inquiryId={inquiryId} />}
     </OwnerGate>
   );
 }
 
 function DetailBody({
-  businessId,
+  source,
   inquiryId,
 }: {
-  businessId: string;
+  source: InquirySource;
   inquiryId: string;
 }) {
-  const { result, loadedAt, reload } = useInquiryDetail(businessId, inquiryId);
+  const { result, loadedAt, reload } = useInquiryDetail(source, inquiryId);
 
   return (
     <main className={auth.page}>

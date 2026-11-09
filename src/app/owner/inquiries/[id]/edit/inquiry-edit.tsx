@@ -7,7 +7,10 @@ import auth from "../../../_components/owner-auth.module.css";
 import styles from "../../../_components/owner-inquiries.module.css";
 import { DetailError, DetailSkeleton } from "../detail-states";
 import { useInquiryDetail } from "../use-inquiry-detail";
-import { updateInquiryFields } from "@/lib/owner-inquiries/mock-api";
+import {
+  saveInquiryFields,
+  type InquirySource,
+} from "@/lib/owner-inquiries/source";
 import {
   EDITABLE_FIELDS,
   MAX_FIELD_LENGTH,
@@ -28,9 +31,7 @@ import type {
 export function InquiryEditView({ inquiryId }: { inquiryId: string }) {
   return (
     <OwnerGate screenName="접수 정보 수정">
-      {({ businessId }) => (
-        <EditBody businessId={businessId} inquiryId={inquiryId} />
-      )}
+      {({ source }) => <EditBody source={source} inquiryId={inquiryId} />}
     </OwnerGate>
   );
 }
@@ -38,13 +39,13 @@ export function InquiryEditView({ inquiryId }: { inquiryId: string }) {
 type Banner = "saved" | "conflict" | null;
 
 function EditBody({
-  businessId,
+  source,
   inquiryId,
 }: {
-  businessId: string;
+  source: InquirySource;
   inquiryId: string;
 }) {
-  const { result, loadedAt, reload } = useInquiryDetail(businessId, inquiryId);
+  const { result, loadedAt, reload } = useInquiryDetail(source, inquiryId);
   // 저장에 성공하면 서버가 돌려준 최신 문의를 바로 씁니다.
   const [saved, setSaved] = useState<InquiryDetail | null>(null);
   const [banner, setBanner] = useState<Banner>(null);
@@ -76,7 +77,7 @@ function EditBody({
         <EditForm
           // 버전이 바뀌면(저장·최신 내용 불러오기) 입력칸을 새 값으로 다시 채웁니다.
           key={inquiry.version}
-          businessId={businessId}
+          source={source}
           inquiry={inquiry}
           now={loadedAt}
           banner={banner}
@@ -108,7 +109,7 @@ const SAVE_ERROR: Record<
 };
 
 function EditForm({
-  businessId,
+  source,
   inquiry,
   now,
   banner,
@@ -116,7 +117,7 @@ function EditForm({
   onSaved,
   onConflict,
 }: {
-  businessId: string;
+  source: InquirySource;
   inquiry: InquiryDetail;
   now: number;
   banner: Banner;
@@ -157,7 +158,7 @@ function EditForm({
       return;
     }
     setSaving(true);
-    const res = await updateInquiryFields(businessId, inquiry.id, {
+    const res = await saveInquiryFields(source, inquiry.id, {
       version: inquiry.version,
       changes: next.changes,
     });
