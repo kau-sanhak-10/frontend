@@ -15,6 +15,7 @@ import {
   getCustomerMessages,
   isWaitingForOwner,
   requestCustomerHandoff,
+  saveCustomerField,
   saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
@@ -311,6 +312,7 @@ test("고객 접수 요약은 같은 문의의 확인된 값만 표시하고 충
       code: "OK",
       message: "",
       result: {
+        version: 3,
         fields: [
           {
             fieldKey: "error_code",
@@ -342,11 +344,12 @@ test("고객 접수 요약은 같은 문의의 확인된 값만 표시하고 충
       },
     });
   });
-  const fields = await getCustomerFields(
+  const { fields, version } = await getCustomerFields(
     12,
     "inq_test",
     new AbortController().signal,
   );
+  assert.equal(version, 3);
   assert.deepEqual(
     fields.map((field) => [field.key, fieldText(field), field.source]),
     [
@@ -356,6 +359,68 @@ test("고객 접수 요약은 같은 문의의 확인된 값만 표시하고 충
     ],
   );
   assert.equal(fields[2].value, null);
+});
+
+test("접수 수정은 해당 문의·버전의 선택 항목만 저장하고 충돌을 자동 재시도하지 않는다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  const signal = new AbortController().signal;
+  const request = mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.pathname, "/api/v1/customer/inquiries/12/fields");
+    assert.equal(options.method, "PATCH");
+    assert.equal(
+      new Headers(options.headers).get("Authorization"),
+      "Bearer inq_test",
+    );
+    const input = JSON.parse(options.body);
+    assert.deepEqual(input.fields, [{ fieldKey: "model", value: "NCB-700" }]);
+    if (input.version === 3)
+      return Response.json(
+        {
+          success: false,
+          code: "INQUIRY_VERSION_CONFLICT",
+          message: "",
+          result: { currentVersion: 4 },
+        },
+        { status: 409 },
+      );
+    assert.equal(input.version, 4);
+    return Response.json({
+      success: true,
+      code: "OK",
+      message: "",
+      result: {
+        version: 5,
+        fields: [
+          {
+            fieldKey: "model",
+            value: "NCB-700",
+            status: "CONFIRMED",
+            source: "CUSTOMER",
+          },
+        ],
+      },
+    });
+  });
+  assert.throws(() =>
+    saveCustomerField(12, "inq_test", 3, "error_code", "A".repeat(21), signal),
+  );
+  assert.equal(request.mock.callCount(), 0);
+  await assert.rejects(
+    saveCustomerField(12, "inq_test", 3, "model", " NCB-700 ", signal),
+    { code: "INQUIRY_VERSION_CONFLICT" },
+  );
+  assert.equal(request.mock.callCount(), 1);
+  const result = await saveCustomerField(
+    12,
+    "inq_test",
+    4,
+    "model",
+    " NCB-700 ",
+    signal,
+  );
+  assert.equal(result.version, 5);
+  assert.equal(result.fields[0].source, "CUSTOMER");
+  assert.equal(result.fields[0].value, "NCB-700");
 });
 
 test("HTTP 휴대폰 접속처럼 randomUUID가 없어도 고유한 UUID v4를 만든다", () => {

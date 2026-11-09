@@ -73,58 +73,122 @@ export async function getCustomerInquiryVersion(
   return (await readInquiry(path, inquiryId, { headers, signal })).version;
 }
 
-const fieldLabels = {
-  symptom: "증상",
-  manufacturer: "제조사",
-  model: "본체 모델명",
-  controller_model: "조절기 모델명",
-  boiler_type: "보일러 종류",
-  error_code: "오류코드",
+export const customerFieldSpecs = {
+  symptom: { label: "증상", maxLength: 255 },
+  manufacturer: { label: "제조사", maxLength: 50 },
+  model: { label: "본체 모델명", maxLength: 100 },
+  controller_model: { label: "조절기 모델명", maxLength: 100 },
+  boiler_type: { label: "보일러 종류", maxLength: 50 },
+  error_code: { label: "오류코드", maxLength: 20 },
 };
 
-export async function getCustomerFields(
+export type CustomerFieldKey = keyof typeof customerFieldSpecs;
+
+async function requestCustomerFields(
   inquiryId: number,
   token: string,
   signal: AbortSignal,
-): Promise<IntakeField[]> {
+  change?: { version: number; fieldKey: CustomerFieldKey; value: string },
+): Promise<{ version: number; fields: IntakeField[] }> {
   const { path, headers } = inquiryAccess(inquiryId, token);
-  const data = await requestApi<{ fields: unknown }>(`${path}/fields`, {
-    headers,
-    signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
-  });
-  const fields = data?.fields;
-  if (!Array.isArray(fields)) throw new Error("Invalid intake fields");
-  return Object.entries(fieldLabels).flatMap(([key, label]) => {
-    const field = fields.find((row) => row?.fieldKey === key);
-    if (!field) return [];
-    if (field.status !== "CONFIRMED" && field.status !== "UNCONFIRMED")
-      throw new Error("Invalid intake field status");
-    const source: unknown = field.source;
-    const knownSource =
-      source === "PHOTO" || source === "CUSTOMER" || source === "OWNER";
-    const conflict =
-      field.status === "UNCONFIRMED" && field.unconfirmedReason === "CONFLICT";
-    const value =
-      field.status === "CONFIRMED" &&
-      knownSource &&
-      typeof field.value === "string" &&
-      field.value.trim()
-        ? field.value
-        : null;
-    return [
-      {
-        key,
-        label,
-        value,
-        source: value && knownSource ? source : undefined,
-        status: conflict ? "CONFLICT" : value ? "CONFIRMED" : "UNCONFIRMED",
-        reason: conflict
-          ? "서로 다른 내용이 있어 다시 확인이 필요해요."
-          : field.unconfirmedReason === "PHOTO_UNREADABLE"
-            ? "사진에서 읽지 못했어요."
-            : undefined,
-      },
-    ];
+  const data = await requestApi<{ version: number; fields: unknown }>(
+    `${path}/fields`,
+    {
+      ...(change
+        ? {
+            method: "PATCH",
+            body: JSON.stringify({
+              version: change.version,
+              fields: [{ fieldKey: change.fieldKey, value: change.value }],
+            }),
+          }
+        : {}),
+      headers: change
+        ? { ...headers, "Content-Type": "application/json" }
+        : headers,
+      signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+    },
+  );
+  if (
+    !Number.isSafeInteger(data?.version) ||
+    data.version < 0 ||
+    !Array.isArray(data.fields)
+  )
+    throw new Error("Invalid intake fields");
+  const rows = data.fields;
+  const fields = Object.entries(customerFieldSpecs).flatMap<IntakeField>(
+    ([key, { label }]) => {
+      const field = rows.find((row) => row?.fieldKey === key);
+      if (!field) return [];
+      if (field.status !== "CONFIRMED" && field.status !== "UNCONFIRMED")
+        throw new Error("Invalid intake field status");
+      const source: unknown = field.source;
+      const knownSource =
+        source === "PHOTO" || source === "CUSTOMER" || source === "OWNER";
+      const conflict =
+        field.status === "UNCONFIRMED" &&
+        field.unconfirmedReason === "CONFLICT";
+      const value =
+        field.status === "CONFIRMED" &&
+        knownSource &&
+        typeof field.value === "string" &&
+        field.value.trim()
+          ? field.value
+          : null;
+      return [
+        {
+          key,
+          label,
+          value,
+          source: value && knownSource ? source : undefined,
+          status: conflict ? "CONFLICT" : value ? "CONFIRMED" : "UNCONFIRMED",
+          reason: conflict
+            ? "서로 다른 내용이 있어 다시 확인이 필요해요."
+            : field.unconfirmedReason === "PHOTO_UNREADABLE"
+              ? "사진에서 읽지 못했어요."
+              : undefined,
+        },
+      ];
+    },
+  );
+  if (
+    change &&
+    (data.version < change.version ||
+      !fields.some((field) => field.key === change.fieldKey))
+  )
+    throw new Error("Invalid saved intake fields");
+  return { version: data.version, fields };
+}
+
+export function getCustomerFields(
+  inquiryId: number,
+  token: string,
+  signal: AbortSignal,
+) {
+  return requestCustomerFields(inquiryId, token, signal);
+}
+
+export function saveCustomerField(
+  inquiryId: number,
+  token: string,
+  version: number,
+  fieldKey: CustomerFieldKey,
+  input: string,
+  signal: AbortSignal,
+) {
+  const value = input.trim();
+  if (
+    !Object.hasOwn(customerFieldSpecs, fieldKey) ||
+    !value ||
+    value.length > customerFieldSpecs[fieldKey].maxLength ||
+    !Number.isSafeInteger(version) ||
+    version < 0
+  )
+    throw new Error("Invalid intake field update");
+  return requestCustomerFields(inquiryId, token, signal, {
+    version,
+    fieldKey,
+    value,
   });
 }
 
