@@ -16,7 +16,7 @@ export type IntakeField = {
   key: string;
   label: string;
   value: string | null;
-  source: "CUSTOMER" | "PHOTO" | "OWNER" | "MANUAL";
+  source?: "CUSTOMER" | "PHOTO" | "OWNER" | "MANUAL";
   status: "CONFIRMED" | "UNCONFIRMED" | "CONFLICT";
   reason?: string;
 };

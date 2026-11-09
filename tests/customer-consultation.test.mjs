@@ -9,6 +9,7 @@ import {
 import {
   createCustomerInquiry,
   createCustomerPhotoUploader,
+  getCustomerFields,
   getCustomerIntake,
   getCustomerInquiryVersion,
   getCustomerMessages,
@@ -295,6 +296,66 @@ test("고객 사진 단독 메시지는 조회에서 빠지지 않는다", async
     { id: "5", role: "CUSTOMER", content: "", photoIds: [12] },
   ]);
   assert.equal(cursor, 5);
+});
+
+test("고객 접수 요약은 같은 문의의 확인된 값만 표시하고 충돌 후보를 가린다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.pathname, "/api/v1/customer/inquiries/12/fields");
+    assert.equal(
+      new Headers(options.headers).get("Authorization"),
+      "Bearer inq_test",
+    );
+    return Response.json({
+      success: true,
+      code: "OK",
+      message: "",
+      result: {
+        fields: [
+          {
+            fieldKey: "error_code",
+            value: "틀린 후보",
+            status: "UNCONFIRMED",
+            source: "PHOTO",
+            unconfirmedReason: "CONFLICT",
+          },
+          {
+            fieldKey: "model",
+            value: "NCB354",
+            status: "CONFIRMED",
+            source: "PHOTO",
+          },
+          {
+            fieldKey: "controller_model",
+            value: "틀린 후보",
+            status: "UNCONFIRMED",
+            source: null,
+            unconfirmedReason: "PHOTO_UNREADABLE",
+          },
+          {
+            fieldKey: "internal_notes",
+            value: "비공개",
+            status: "CONFIRMED",
+            source: "OWNER",
+          },
+        ],
+      },
+    });
+  });
+  const fields = await getCustomerFields(
+    12,
+    "inq_test",
+    new AbortController().signal,
+  );
+  assert.deepEqual(
+    fields.map((field) => [field.key, fieldText(field), field.source]),
+    [
+      ["model", "NCB354", "PHOTO"],
+      ["controller_model", "미확인", undefined],
+      ["error_code", "정보 확인 필요", undefined],
+    ],
+  );
+  assert.equal(fields[2].value, null);
 });
 
 test("HTTP 휴대폰 접속처럼 randomUUID가 없어도 고유한 UUID v4를 만든다", () => {

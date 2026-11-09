@@ -234,7 +234,7 @@
 }
 .fields > div {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
+  grid-template-columns: 90px minmax(0, 1fr);
   gap: 12px;
   padding: 14px 0;
   border-bottom: 1px solid var(--line);

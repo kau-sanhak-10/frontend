@@ -649,7 +649,7 @@ export function FieldList({ fields }: { fields: IntakeField[] }) {
             >
               {fieldText(field)}
             </span>
-            <small>{fieldSources[field.source]}</small>
+            {field.source && <small>{fieldSources[field.source]}</small>}
             {field.reason && <p>{field.reason}</p>}
           </dd>
         </div>

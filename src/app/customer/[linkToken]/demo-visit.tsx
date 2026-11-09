@@ -3,11 +3,14 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { getCustomerFields } from "@/lib/customer-api";
+import type { IntakeField } from "@/lib/customer-consultation";
 import {
   demoVisitLocations,
   saveCustomerDemoVisit,
 } from "@/lib/customer-visit-demo";
 import styles from "../intake.module.css";
+import { FieldList } from "../consultation";
 
 export default function CustomerDemoVisit({
   inquiryId,
@@ -25,11 +28,26 @@ export default function CustomerDemoVisit({
     "idle",
   );
   const [error, setError] = useState("");
+  const [fields, setFields] = useState<IntakeField[] | "failed" | null>(null);
+  const [fieldAttempt, setFieldAttempt] = useState(0);
 
   useEffect(() => {
     heading.current?.focus();
     return () => request.current?.abort();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getCustomerFields(inquiryId, inquiryToken, controller.signal).then(
+      (result) => {
+        if (!controller.signal.aborted) setFields(result);
+      },
+      () => {
+        if (!controller.signal.aborted) setFields("failed");
+      },
+    );
+    return () => controller.abort();
+  }, [inquiryId, inquiryToken, fieldAttempt]);
 
   async function save() {
     if (state !== "idle" || request.current) return;
@@ -102,6 +120,32 @@ export default function CustomerDemoVisit({
         </h1>
       </header>
       <section className={styles.content} aria-busy={state === "saving"}>
+        <section aria-labelledby="intake-summary">
+          <h2 id="intake-summary">정리된 접수 정보</h2>
+          {fields === null ? (
+            <p role="status">접수 정보를 불러오고 있어요.</p>
+          ) : fields === "failed" || fields.length === 0 ? (
+            <>
+              <p role="status">
+                {fields === "failed"
+                  ? "접수 정보를 불러오지 못했어요. 방문정보는 계속 저장할 수 있어요."
+                  : "아직 정리된 정보가 없어요. 상담과 사진은 그대로 남아 있어요."}
+              </p>
+              <button
+                type="button"
+                className={styles.textButton}
+                onClick={() => {
+                  setFields(null);
+                  setFieldAttempt((attempt) => attempt + 1);
+                }}
+              >
+                접수 정보 다시 불러오기
+              </button>
+            </>
+          ) : (
+            <FieldList fields={fields} />
+          )}
+        </section>
         <h2>한국항공대학교로 방문 접수</h2>
         <dl className={styles.review}>
           <dt>출발지 예시</dt>

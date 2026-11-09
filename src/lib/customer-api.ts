@@ -2,6 +2,7 @@ import { ApiError, requestApi } from "./api.ts";
 import { validatePhoto } from "./customer-consultation.ts";
 import type {
   CustomerMessage,
+  IntakeField,
   SendCustomerInput,
 } from "./customer-consultation.ts";
 import type { IntakeBusiness, VisitInfo } from "./customer-intake.ts";
@@ -70,6 +71,61 @@ export async function getCustomerInquiryVersion(
 ) {
   const { path, headers } = inquiryAccess(inquiryId, token);
   return (await readInquiry(path, inquiryId, { headers, signal })).version;
+}
+
+const fieldLabels = {
+  symptom: "증상",
+  manufacturer: "제조사",
+  model: "본체 모델명",
+  controller_model: "조절기 모델명",
+  boiler_type: "보일러 종류",
+  error_code: "오류코드",
+};
+
+export async function getCustomerFields(
+  inquiryId: number,
+  token: string,
+  signal: AbortSignal,
+): Promise<IntakeField[]> {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const data = await requestApi<{ fields: unknown }>(`${path}/fields`, {
+    headers,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]),
+  });
+  const fields = data?.fields;
+  if (!Array.isArray(fields)) throw new Error("Invalid intake fields");
+  return Object.entries(fieldLabels).flatMap(([key, label]) => {
+    const field = fields.find((row) => row?.fieldKey === key);
+    if (!field) return [];
+    if (field.status !== "CONFIRMED" && field.status !== "UNCONFIRMED")
+      throw new Error("Invalid intake field status");
+    const source: unknown = field.source;
+    const knownSource =
+      source === "PHOTO" || source === "CUSTOMER" || source === "OWNER";
+    const conflict =
+      field.status === "UNCONFIRMED" && field.unconfirmedReason === "CONFLICT";
+    const value =
+      field.status === "CONFIRMED" &&
+      knownSource &&
+      typeof field.value === "string" &&
+      field.value.trim()
+        ? field.value
+        : null;
+    return [
+      {
+        key,
+        label,
+        value,
+        source: value && knownSource ? source : undefined,
+        status: conflict ? "CONFLICT" : value ? "CONFIRMED" : "UNCONFIRMED",
+        reason: conflict
+          ? "서로 다른 내용이 있어 다시 확인이 필요해요."
+          : field.unconfirmedReason === "PHOTO_UNREADABLE"
+            ? "사진에서 읽지 못했어요."
+            : undefined,
+      },
+    ];
+  });
 }
 
 export async function getCustomerVisitSnapshot(
