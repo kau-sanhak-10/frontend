@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import {
   type SettingsData,
@@ -72,6 +73,7 @@ export default function SettingsForm({
   onSave: (
     section: SettingsSection,
     data: SettingsData,
+    saved: SettingsData,
   ) => Promise<SettingsData>;
   preview?: boolean;
 }) {
@@ -159,7 +161,7 @@ export default function SettingsForm({
     lock.current = true;
     setBusy(true);
     try {
-      const result = await onSave(section, candidate);
+      const result = await onSave(section, candidate, saved);
       if (!mounted.current) return;
       setSaved(result);
       setDraft((d) => refreshSettingsDraft(section, d, saved, result));
@@ -212,7 +214,7 @@ export default function SettingsForm({
         </p>
       )}
       <header className={common.header}>
-        {section && (
+        {section ? (
           <button
             type="button"
             className={common.backLink}
@@ -227,7 +229,20 @@ export default function SettingsForm({
               height={22}
             />
           </button>
-        )}
+        ) : !preview ? (
+          <Link
+            href="/owner/account"
+            className={common.backLink}
+            aria-label="내 계정으로"
+          >
+            <Image
+              src="/owner/settings-back.svg"
+              alt=""
+              width={22}
+              height={22}
+            />
+          </Link>
+        ) : null}
         <h1 ref={heading} tabIndex={-1} className={common.headerTitle}>
           {section ? sections[section] : "업체 설정"}
         </h1>
@@ -398,20 +413,22 @@ export default function SettingsForm({
                     {draft.serviceAreas.map((a) => (
                       <li key={a.regionCode}>
                         <span>{a.regionName}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraft({
-                              ...draft,
-                              serviceAreas: draft.serviceAreas.filter(
-                                (v) => v.regionCode !== a.regionCode,
-                              ),
-                            })
-                          }
-                          aria-label={`${a.regionName} 삭제`}
-                        >
-                          삭제
-                        </button>
+                        {preview && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                serviceAreas: draft.serviceAreas.filter(
+                                  (v) => v.regionCode !== a.regionCode,
+                                ),
+                              })
+                            }
+                            aria-label={`${a.regionName} 삭제`}
+                          >
+                            삭제
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -716,6 +733,11 @@ export default function SettingsForm({
             )}
             {section === "intake" && (
               <>
+                {!preview && (
+                  <p className={common.info}>
+                    자동 예약과 신규 접수는 하나씩 변경하고 저장해 주세요.
+                  </p>
+                )}
                 <section className={styles.work}>
                   <h2 className={styles.sectionTitle}>자동 예약</h2>
                   <p className={common.hint}>
@@ -726,6 +748,9 @@ export default function SettingsForm({
                     <input
                       type="checkbox"
                       checked={draft.booking.autoBookingEnabled}
+                      disabled={
+                        !preview && draft.intakePaused !== saved.intakePaused
+                      }
                       onChange={(e) => {
                         if (e.target.checked && autoBookingError) {
                           setErrors({ auto: autoBookingError });
@@ -763,6 +788,11 @@ export default function SettingsForm({
                     <input
                       type="checkbox"
                       checked={draft.intakePaused}
+                      disabled={
+                        !preview &&
+                        draft.booking.autoBookingEnabled !==
+                          saved.booking.autoBookingEnabled
+                      }
                       onChange={(e) => {
                         setConfirmPause(e.target.checked);
                         setDraft({ ...draft, intakePaused: e.target.checked });
