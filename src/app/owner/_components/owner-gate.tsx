@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { StatusPanel } from "./status-panel";
 import styles from "./owner-auth.module.css";
 import type { OwnerSession } from "@/lib/owner-auth/session";
 import { useOwnerBusiness } from "@/lib/owner-inquiries/use-owner-business";
+import type { InquirySource } from "@/lib/owner-inquiries/source";
 
 type OwnerGateProps = {
   /** 로그인 안내 문구에 쓸 화면 이름 (예: "접수함") */
   screenName: string;
   children: (ctx: {
     session: OwnerSession;
-    businessId: string;
+    /** 실제 로그인은 서버에서, 예시 로그인은 예시 데이터에서 조회합니다. */
+    source: InquirySource;
   }) => React.ReactNode;
 };
 
@@ -24,6 +26,18 @@ type OwnerGateProps = {
 export function OwnerGate({ screenName, children }: OwnerGateProps) {
   const router = useRouter();
   const state = useOwnerBusiness();
+  const businessId = state.status === "ready" ? state.businessId : null;
+  const liveToken = state.status === "live" ? state.session.accessToken : null;
+  // 화면이 다시 그려져도 같은 값을 유지해야 조회가 반복되지 않습니다.
+  const source = useMemo<InquirySource | null>(
+    () =>
+      liveToken
+        ? { kind: "live", token: liveToken }
+        : businessId
+          ? { kind: "mock", businessId }
+          : null,
+    [businessId, liveToken],
+  );
 
   useEffect(() => {
     if (state.status === "expired") {
@@ -71,28 +85,14 @@ export function OwnerGate({ screenName, children }: OwnerGateProps) {
     );
   }
 
-  if (state.status === "live") {
-    return (
-      <main className={styles.page}>
-        <p className={styles.brand}>일로 · 사장님</p>
-        <h1 className={styles.title}>{state.session.businessName}</h1>
-        <StatusPanel
-          title="접수함과 방문 일정은 준비 중이에요."
-          body="내 계정에서 업체와 로그인 번호를 확인할 수 있어요."
-        />
-        <nav className={styles.links} aria-label="사장님 메뉴">
-          <Link href="/owner/account">내 계정</Link>
-        </nav>
-      </main>
-    );
-  }
-
   return (
     <>
-      <p className={styles.previewNotice} role="note">
-        화면 확인용 · 예시 접수와 예약입니다.
-      </p>
-      {children({ session: state.session, businessId: state.businessId })}
+      {source?.kind === "mock" && (
+        <p className={styles.previewNotice} role="note">
+          화면 확인용 · 예시 접수와 예약입니다.
+        </p>
+      )}
+      {source ? children({ session: state.session, source }) : null}
     </>
   );
 }

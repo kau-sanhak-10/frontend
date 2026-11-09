@@ -8,7 +8,10 @@ import { StatusPanel } from "./_components/status-panel";
 import { useLoad } from "./_components/use-load";
 import auth from "./_components/owner-auth.module.css";
 import styles from "./_components/owner-inquiries.module.css";
-import { fetchInquiries } from "@/lib/owner-inquiries/mock-api";
+import {
+  loadInquiries,
+  type InquirySource,
+} from "@/lib/owner-inquiries/source";
 import {
   OWNER_CHECK_REASON_LABEL,
   countByTab,
@@ -27,24 +30,21 @@ import type { InquirySummary } from "@/lib/owner-inquiries/types";
 export function OwnerHome() {
   return (
     <OwnerGate screenName="홈">
-      {({ businessId, session }) => (
-        <OwnerHomeBody
-          businessId={businessId}
-          businessName={session.businessName}
-        />
+      {({ source, session }) => (
+        <OwnerHomeBody source={source} businessName={session.businessName} />
       )}
     </OwnerGate>
   );
 }
 
 function OwnerHomeBody({
-  businessId,
+  source,
   businessName,
 }: {
-  businessId: string;
+  source: InquirySource;
   businessName: string;
 }) {
-  const fetcher = useCallback(() => fetchInquiries(businessId), [businessId]);
+  const fetcher = useCallback(() => loadInquiries(source), [source]);
   const { result, loadedAt, reload } = useLoad(fetcher);
 
   return (
