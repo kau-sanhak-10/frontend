@@ -8,8 +8,10 @@ import {
 } from "../src/lib/customer-consultation.ts";
 import {
   createCustomerInquiry,
+  createCustomerPhotoUploader,
   getCustomerIntake,
   getCustomerInquiryVersion,
+  getCustomerMessages,
   saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
@@ -70,6 +72,82 @@ afterEach(() => {
   mock.restoreAll();
   if (previousBase === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;
   else process.env.NEXT_PUBLIC_API_BASE_URL = previousBase;
+});
+
+test("사진 업로드 완료 응답이 끊겨도 같은 티켓으로 완료만 다시 확인한다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  const signed = "https://demo.s3.ap-northeast-2.amazonaws.com/test.png";
+  const reply = (result) =>
+    Response.json({ success: true, code: "OK", message: "OK", result });
+  const calls = [];
+  const file = new File(["test"], "photo.png", { type: "image/png" });
+  mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push([url.href, options.method]);
+    const headers = new Headers(options.headers);
+    if (url.href === signed) {
+      assert.equal(headers.get("Authorization"), null);
+      assert.equal(headers.get("Content-Type"), "image/png");
+      assert.equal(options.body, file);
+      return new Response(null, { status: 200 });
+    }
+    assert.equal(headers.get("Authorization"), "Bearer inq_test");
+    if (url.pathname.endsWith("/photos")) {
+      assert.deepEqual(JSON.parse(options.body), {
+        contentType: "image/png",
+        sizeBytes: 4,
+      });
+      return reply({
+        photoId: 12,
+        method: "PUT",
+        uploadUrl: signed,
+        headers: { "content-type": "image/png" },
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+    }
+    if (calls.length === 3) throw new TypeError("Connection lost");
+    return reply({ photoId: 12, uploadStatus: "DONE" });
+  });
+  const upload = createCustomerPhotoUploader(1, "inq_test");
+  await assert.rejects(upload(file), /Connection lost/);
+  assert.deepEqual(await upload(file), { photoId: 12 });
+  assert.deepEqual(
+    calls.map(([, method]) => method),
+    ["POST", "PUT", "POST", "POST"],
+  );
+  assert.deepEqual(calls[2], calls[3]);
+});
+
+test("고객 사진 단독 메시지는 조회에서 빠지지 않는다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      success: true,
+      code: "OK",
+      message: "OK",
+      result: {
+        hasMore: false,
+        messages: [
+          {
+            messageId: 5,
+            sender: "CUSTOMER",
+            content: null,
+            deliveryStatus: "SENT",
+            photoIds: [12],
+          },
+        ],
+      },
+    }),
+  );
+  const { messages, cursor } = await getCustomerMessages(
+    1,
+    "inq_test",
+    0,
+    AbortSignal.timeout(1000),
+  );
+  assert.deepEqual(messages, [
+    { id: "5", role: "CUSTOMER", content: "", photoIds: [12] },
+  ]);
+  assert.equal(cursor, 5);
 });
 
 test("HTTP 휴대폰 접속처럼 randomUUID가 없어도 고유한 UUID v4를 만든다", () => {

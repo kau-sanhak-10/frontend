@@ -25,6 +25,7 @@ export type CustomerMessage = {
   id: string;
   role: "CUSTOMER" | "AI" | "OWNER" | "SYSTEM";
   content: string;
+  photoIds?: number[];
   photos?: { id: number; url: string; name: string }[];
 };
 
