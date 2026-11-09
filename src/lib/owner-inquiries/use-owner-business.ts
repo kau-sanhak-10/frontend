@@ -8,17 +8,22 @@ export type OwnerBusinessState =
   | { status: "loading" }
   | { status: "none" }
   | { status: "expired" }
+  | { status: "live"; session: OwnerSession & { accessToken: string } }
   /** 로그인은 됐지만 연결된 업체를 찾지 못함 */
   | { status: "unlinked" }
   | { status: "ready"; session: OwnerSession; businessId: string };
 
 /**
- * 로그인한 사장님의 업체를 알려줍니다.
- * FE-07에서는 서버가 로그인 토큰으로 업체를 정하므로 mockBusinessIdOf를 바꿉니다.
+ * 실제 세션으로 화면 검수용 업체나 접수 데이터를 읽지 않습니다.
  */
 export function useOwnerBusiness(): OwnerBusinessState {
   const session = useOwnerSession();
   if (session.status !== "active") return session;
+  if (session.session.accessToken)
+    return {
+      status: "live",
+      session: { ...session.session, accessToken: session.session.accessToken },
+    };
   const businessId = mockBusinessIdOf(session.session.loginPhone);
   if (!businessId) return { status: "unlinked" };
   return { status: "ready", session: session.session, businessId };

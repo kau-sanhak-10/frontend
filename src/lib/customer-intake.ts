@@ -23,6 +23,8 @@ export type VisitInfo = {
 
 export type VisitErrors = Partial<Record<keyof VisitInfo, string>>;
 
+export const visitAccessNoteMaxLength = 255;
+
 export const emptyVisitInfo: VisitInfo = {
   name: "",
   phone: "",
@@ -51,8 +53,8 @@ export function validateVisitInfo(
     errors.address = "주소는 200자 이내로 입력해 주세요.";
   if (input.addressDetail.length > 200)
     errors.addressDetail = "상세 주소는 200자 이내로 입력해 주세요.";
-  if (input.accessNote.length > 500)
-    errors.accessNote = "추가 요청은 500자 이내로 입력해 주세요.";
+  if (input.accessNote.length > visitAccessNoteMaxLength)
+    errors.accessNote = `추가 요청은 ${visitAccessNoteMaxLength}자 이내로 입력해 주세요.`;
   if (
     input.workTypeId &&
     !workTypes.some((workType) => workType.id === input.workTypeId)

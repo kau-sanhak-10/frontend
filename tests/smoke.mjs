@@ -23,7 +23,11 @@ const server = spawn(
   ],
   {
     cwd: process.cwd(),
-    env: { ...process.env, CUSTOMER_PREVIEW_ENABLED: "false" },
+    env: {
+      ...process.env,
+      CUSTOMER_PREVIEW_ENABLED: "false",
+      CUSTOMER_LIVE_ENABLED: "false",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   },
 );
@@ -78,6 +82,7 @@ try {
   );
   assert.equal((await fetch(`${base}/unknown-role`)).status, 404);
   assert.equal((await fetch(`${base}/customer/preview`)).status, 404);
+  assert.equal((await fetch(`${base}/customer/${"a".repeat(43)}`)).status, 404);
   assert.equal(
     (await fetch(`${base}/customer/consultation-preview`)).status,
     404,

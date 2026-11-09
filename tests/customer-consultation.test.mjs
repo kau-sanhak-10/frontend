@@ -8,8 +8,62 @@ import {
 } from "../src/lib/customer-consultation.ts";
 import {
   createCustomerInquiry,
+  getCustomerIntake,
+  getCustomerInquiryVersion,
+  saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
+import { isVisitDemoLink } from "../src/lib/customer-visit-demo.ts";
+
+test("방문 시연은 지정된 테스트 링크와 개발 서버에서만 열린다", () => {
+  const link = "demo".padEnd(43, "0");
+  const dev = "https://dev-api.illo.ai.kr";
+  assert.equal(isVisitDemoLink(link, link, dev), true);
+  assert.equal(isVisitDemoLink(link, link, "http://127.0.0.1:35112"), true);
+  assert.equal(isVisitDemoLink(link, undefined, dev), false);
+  assert.equal(isVisitDemoLink(link, "other".padEnd(43, "0"), dev), false);
+  assert.equal(isVisitDemoLink("invalid", "invalid", dev), false);
+  for (const url of [undefined, "https://api.illo.ai.kr", `${dev}.example`]) {
+    assert.equal(isVisitDemoLink(link, link, url), false);
+  }
+});
+
+test("짧은 Dev 업체 링크는 지정된 시연 경로에서만 조회한다", async () => {
+  const link = "dev-test-qa";
+  const dev = "https://dev-api.illo.ai.kr";
+  process.env.NEXT_PUBLIC_API_BASE_URL = dev;
+  const fetchMock = mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      success: true,
+      code: "OK",
+      message: "OK",
+      result: {
+        businessName: "테스트 업체",
+        contactPhone: "01000000000",
+        workCategories: [],
+        intakeAvailable: true,
+        termsVersion: "v1",
+      },
+    }),
+  );
+  await assert.rejects(getCustomerIntake(link), /Invalid intake link/);
+  assert.equal(fetchMock.mock.callCount(), 0);
+  assert.equal(isVisitDemoLink(link, link, dev), true);
+  assert.equal(isVisitDemoLink(link, "dev-test-other", dev), false);
+  assert.equal(isVisitDemoLink(link, link, "https://api.illo.ai.kr"), false);
+  assert.equal(isVisitDemoLink("dev-test-../qa", "dev-test-../qa", dev), false);
+  const { business, available } = await getCustomerIntake(
+    link,
+    undefined,
+    true,
+  );
+  assert.equal(business.name, "테스트 업체");
+  assert.equal(available, true);
+  assert.equal(
+    fetchMock.mock.calls[0].arguments[0].href,
+    `${dev}/api/v1/public/intake/${link}`,
+  );
+});
 
 const previousBase = process.env.NEXT_PUBLIC_API_BASE_URL;
 afterEach(() => {
@@ -148,4 +202,53 @@ test("입력·권한 정보가 잘못되면 요청하지 않고 잘못된 성공
     }),
   );
   assert.equal(fetch.mock.callCount(), 2);
+});
+
+test("방문정보는 같은 문의에 버전과 검증된 좌표로 저장하고 다른 문의 응답을 거절한다", async () => {
+  const fetch = respond({ inquiryId: 10, version: 3 });
+  const version = await getCustomerInquiryVersion(10, "inq_test");
+  const visit = {
+    name: " 테스트 ",
+    phone: "010-1234-5678",
+    address: " 테스트 주소 ",
+    addressDetail: " ",
+    accessNote: "",
+    workTypeId: "",
+  };
+  await assert.rejects(
+    saveCustomerVisitInfo(10, "inq_test", version, visit, {
+      lat: NaN,
+      lng: 127,
+    }),
+  );
+  assert.equal(fetch.mock.callCount(), 1);
+  assert.equal(
+    await saveCustomerVisitInfo(10, "inq_test", version, visit, {
+      lat: 37,
+      lng: 127,
+    }),
+    3,
+  );
+  const [url, request] = fetch.mock.calls[1].arguments;
+  assert.equal(
+    new URL(url).pathname,
+    "/api/v1/customer/inquiries/10/visit-info",
+  );
+  assert.equal(request.method, "PUT");
+  assert.equal(
+    new Headers(request.headers).get("Authorization"),
+    "Bearer inq_test",
+  );
+  assert.deepEqual(JSON.parse(request.body), {
+    version: 3,
+    name: "테스트",
+    phone: "01012345678",
+    address: "테스트 주소",
+    addressDetail: null,
+    lat: 37,
+    lng: 127,
+    accessNote: null,
+    workCategory: null,
+  });
+  await assert.rejects(getCustomerInquiryVersion(11, "inq_test"));
 });

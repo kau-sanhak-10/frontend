@@ -309,6 +309,7 @@ export function mapDetail(
     id: String(detail.inquiryId),
     businessId: "live",
     customerLabel: maskName(detail.visitInfo?.name ?? null),
+    visitAddress: address ?? undefined,
     title: titleOf(symptom ?? null, detail.visitInfo?.workCategory ?? null),
     receivedAt: time(detail.createdAt),
     status,

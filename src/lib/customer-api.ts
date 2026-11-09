@@ -1,7 +1,200 @@
 import { requestApi } from "./api.ts";
-import type { SendCustomerInput } from "./customer-consultation.ts";
+import type {
+  CustomerMessage,
+  SendCustomerInput,
+} from "./customer-consultation.ts";
+import type { IntakeBusiness, VisitInfo } from "./customer-intake.ts";
 
-// API 명세 v0.3에서 요청·응답 예시가 확정된 두 경로만 준비한다. 프리뷰에서는 호출하지 않는다.
+const categoryNames: Record<string, string> = {
+  INSPECTION: "점검",
+  REPAIR: "수리·부품교체",
+  LEAK: "누수",
+  REPLACEMENT: "보일러 교체",
+};
+
+type IntakeResponse = {
+  businessName: string;
+  contactPhone: string;
+  customerNotice: string | null;
+  serviceDescription: string | null;
+  workCategories: string[];
+  intakeAvailable: boolean;
+  termsVersion: string;
+};
+
+export function isIntakeLinkToken(token: string, visitDemo = false) {
+  return (
+    /^[A-Za-z0-9_-]{43}$/.test(token) ||
+    (visitDemo && /^dev-test-[A-Za-z0-9_-]{1,34}$/.test(token))
+  );
+}
+
+function inquiryAccess(inquiryId: number, token: string) {
+  if (
+    !Number.isSafeInteger(inquiryId) ||
+    inquiryId <= 0 ||
+    !token.trim() ||
+    /[\r\n]/.test(token)
+  )
+    throw new Error("Invalid inquiry access");
+  return {
+    path: `/api/v1/customer/inquiries/${inquiryId}`,
+    headers: { Authorization: `Bearer ${token}` },
+  };
+}
+
+async function readInquiryVersion(
+  path: string,
+  inquiryId: number,
+  options: RequestInit,
+) {
+  const value = await requestApi<{ inquiryId: number; version: number }>(
+    path,
+    options,
+  );
+  if (
+    value?.inquiryId !== inquiryId ||
+    !Number.isSafeInteger(value.version) ||
+    value.version < 0
+  )
+    throw new Error("Invalid inquiry version");
+  return value.version;
+}
+
+export async function getCustomerInquiryVersion(
+  inquiryId: number,
+  token: string,
+  signal?: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  return readInquiryVersion(path, inquiryId, { headers, signal });
+}
+
+export async function saveCustomerVisitInfo(
+  inquiryId: number,
+  token: string,
+  version: number,
+  visit: VisitInfo,
+  coordinates: { lat: number; lng: number },
+  signal?: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const { lat, lng } = coordinates;
+  // 좌표는 확인된 기본주소와 함께 전달한다. 좌표가 없다고 임의 위치를 보내지 않는다.
+  if (
+    !Number.isSafeInteger(version) ||
+    version < 0 ||
+    !Number.isFinite(lat) ||
+    Math.abs(lat) > 90 ||
+    !Number.isFinite(lng) ||
+    Math.abs(lng) > 180 ||
+    (visit.workTypeId && !Object.hasOwn(categoryNames, visit.workTypeId))
+  )
+    throw new Error("Invalid visit information");
+  return readInquiryVersion(`${path}/visit-info`, inquiryId, {
+    method: "PUT",
+    signal,
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      version,
+      name: visit.name.trim(),
+      phone: visit.phone.replace(/[\s-]/g, ""),
+      address: visit.address.trim(),
+      addressDetail: visit.addressDetail.trim() || null,
+      lat,
+      lng,
+      accessNote: visit.accessNote.trim() || null,
+      workCategory: visit.workTypeId || null,
+    }),
+  });
+}
+
+export async function getCustomerIntake(
+  linkToken: string,
+  signal?: AbortSignal,
+  visitDemo = false,
+) {
+  if (!isIntakeLinkToken(linkToken, visitDemo))
+    throw new Error("Invalid intake link");
+  const value = await requestApi<IntakeResponse>(
+    `/api/v1/public/intake/${encodeURIComponent(linkToken)}`,
+    { signal },
+  );
+  if (
+    !value ||
+    typeof value.businessName !== "string" ||
+    !value.businessName.trim() ||
+    typeof value.contactPhone !== "string" ||
+    typeof value.intakeAvailable !== "boolean" ||
+    typeof value.termsVersion !== "string" ||
+    !value.termsVersion.trim() ||
+    !Array.isArray(value.workCategories)
+  )
+    throw new Error("Invalid intake response");
+
+  const business: IntakeBusiness = {
+    name: value.businessName,
+    phone: value.contactPhone,
+    guidance: [value.customerNotice, value.serviceDescription]
+      .filter((item) => typeof item === "string" && item.trim())
+      .join(" · "),
+    termsVersion: value.termsVersion,
+    workTypes: value.workCategories
+      .filter(
+        (id) => typeof id === "string" && Object.hasOwn(categoryNames, id),
+      )
+      .map((id) => ({ id, name: categoryNames[id] })),
+  };
+  return { business, available: value.intakeAvailable };
+}
+
+export async function getCustomerMessages(
+  inquiryId: number,
+  token: string,
+  afterId: number,
+  signal: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const suffix = afterId ? `?afterId=${afterId}` : "";
+  const value = await requestApi<{
+    messages: {
+      messageId: number;
+      sender: CustomerMessage["role"];
+      content: string | null;
+      deliveryStatus: string;
+    }[];
+    hasMore: boolean;
+  }>(`${path}/messages${suffix}`, { signal, headers });
+  if (
+    !value ||
+    !Array.isArray(value.messages) ||
+    typeof value.hasMore !== "boolean"
+  )
+    throw new Error("Invalid messages response");
+  const messages: CustomerMessage[] = [];
+  let cursor = afterId;
+  for (const row of value.messages) {
+    if (!row || !Number.isSafeInteger(row.messageId) || row.messageId <= cursor)
+      throw new Error("Invalid message order");
+    // A pending message can later become SENT; don't advance past it.
+    if (row.deliveryStatus === "PENDING")
+      return { messages, cursor, hasMore: false };
+    cursor = row.messageId;
+    if (
+      row.deliveryStatus === "SENT" &&
+      ["CUSTOMER", "AI", "OWNER"].includes(row.sender) &&
+      typeof row.content === "string" &&
+      row.content.trim()
+    )
+      messages.push({
+        id: String(row.messageId),
+        role: row.sender,
+        content: row.content,
+      });
+  }
+  return { messages, cursor, hasMore: value.hasMore && cursor > afterId };
+}
+
 export async function createCustomerInquiry(
   linkToken: string,
   consents: {
@@ -34,7 +227,7 @@ export async function createCustomerInquiry(
     (value.inquiryId as number) <= 0 ||
     !("inquiryToken" in value) ||
     typeof value.inquiryToken !== "string" ||
-    !value.inquiryToken.trim() ||
+    !/^inq_[A-Za-z0-9_-]+$/.test(value.inquiryToken) ||
     !("expiresAt" in value) ||
     typeof value.expiresAt !== "string" ||
     !Number.isFinite(Date.parse(value.expiresAt))
@@ -53,13 +246,7 @@ export async function sendCustomerMessage(
   input: SendCustomerInput,
   signal?: AbortSignal,
 ) {
-  if (
-    !Number.isSafeInteger(inquiryId) ||
-    inquiryId <= 0 ||
-    !token.trim() ||
-    /[\r\n]/.test(token)
-  )
-    throw new Error("Invalid inquiry access");
+  const { path, headers } = inquiryAccess(inquiryId, token);
   const content = input.content.trim();
   if (
     !input.clientMsgId ||
@@ -67,18 +254,12 @@ export async function sendCustomerMessage(
     input.photoIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
   )
     throw new Error("Invalid message");
-  const value = await requestApi<unknown>(
-    `/api/v1/customer/inquiries/${inquiryId}/messages`,
-    {
-      method: "POST",
-      signal,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ...input, content: content || null }),
-    },
-  );
+  const value = await requestApi<unknown>(`${path}/messages`, {
+    method: "POST",
+    signal,
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...input, content: content || null }),
+  });
   if (
     !value ||
     typeof value !== "object" ||

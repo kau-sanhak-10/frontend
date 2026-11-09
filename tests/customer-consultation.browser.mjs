@@ -102,7 +102,7 @@ try {
     mimeType: "image/png",
     buffer: await readFile("public/customer/boiler-example.png"),
   };
-  await open();
+  await open("?fail=visit");
   await page.getByLabel("개인정보 수집·이용 동의").check();
   await page.getByRole("button", { name: "동의하고 문의 시작" }).click();
   await page.getByRole("heading", { name: "덕구와 상담" }).waitFor();
@@ -143,6 +143,25 @@ try {
     .getByRole("button", { name: "접수 내용 확인", exact: true })
     .click();
   await page
+    .getByRole("alert")
+    .getByText(/입력한 내용은 그대로/)
+    .waitFor();
+  assert.equal(
+    await page.getByRole("heading", { name: "방문 정보", exact: true }).count(),
+    1,
+  );
+  assert.equal(
+    await page.getByLabel("이름", { exact: true }).inputValue(),
+    "입력보존테스트",
+  );
+  assert.equal(
+    await page.getByLabel("방문 주소", { exact: true }).inputValue(),
+    "경기 고양시 테스트로 1",
+  );
+  await page
+    .getByRole("button", { name: "접수 내용 확인", exact: true })
+    .click();
+  await page
     .getByRole("heading", { name: "접수 내용 확인", exact: true })
     .waitFor();
   assert.equal(
@@ -155,9 +174,7 @@ try {
     path: path.join(output, "flow-summary.png"),
     fullPage: true,
   });
-  passed.push(
-    "필수 동의→사진 없이 상담→미확인 정보→방문정보→접수 확인, 수정 전 입력 보존",
-  );
+  passed.push("사진 없는 상담→방문정보→실패 후 입력 보존·재시도→접수 확인");
 
   await open("?scene=chat");
   await page
