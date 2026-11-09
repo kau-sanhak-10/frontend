@@ -4,6 +4,7 @@ import { setTimeout } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
   getCustomerInquiryVersion,
+  isIntakeLinkToken,
   saveCustomerVisitInfo,
 } from "../src/lib/customer-api.ts";
 import { demoVisitLocations } from "../src/lib/customer-visit-demo.ts";
@@ -14,7 +15,7 @@ const api = "http://127.0.0.1:35112";
 process.env.NEXT_PUBLIC_API_BASE_URL = api;
 const link = process.env.ILRO_TEST_INTAKE_LINK;
 const regularLink = process.env.ILRO_TEST_REGULAR_LINK;
-assert.match(link ?? "", /^[A-Za-z0-9_-]{43}$/);
+assert.ok(isIntakeLinkToken(link ?? "", true));
 assert.match(regularLink ?? "", /^[A-Za-z0-9_-]{43}$/);
 assert.notEqual(link, regularLink);
 const { chromium } = await import(

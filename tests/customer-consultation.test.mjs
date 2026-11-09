@@ -8,6 +8,7 @@ import {
 } from "../src/lib/customer-consultation.ts";
 import {
   createCustomerInquiry,
+  getCustomerIntake,
   getCustomerInquiryVersion,
   saveCustomerVisitInfo,
   sendCustomerMessage,
@@ -25,6 +26,43 @@ test("방문 시연은 지정된 테스트 링크와 개발 서버에서만 열�
   for (const url of [undefined, "https://api.illo.ai.kr", `${dev}.example`]) {
     assert.equal(isVisitDemoLink(link, link, url), false);
   }
+});
+
+test("짧은 Dev 업체 링크는 지정된 시연 경로에서만 조회한다", async () => {
+  const link = "dev-test-qa";
+  const dev = "https://dev-api.illo.ai.kr";
+  process.env.NEXT_PUBLIC_API_BASE_URL = dev;
+  const fetchMock = mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      success: true,
+      code: "OK",
+      message: "OK",
+      result: {
+        businessName: "테스트 업체",
+        contactPhone: "01000000000",
+        workCategories: [],
+        intakeAvailable: true,
+        termsVersion: "v1",
+      },
+    }),
+  );
+  await assert.rejects(getCustomerIntake(link), /Invalid intake link/);
+  assert.equal(fetchMock.mock.callCount(), 0);
+  assert.equal(isVisitDemoLink(link, link, dev), true);
+  assert.equal(isVisitDemoLink(link, "dev-test-other", dev), false);
+  assert.equal(isVisitDemoLink(link, link, "https://api.illo.ai.kr"), false);
+  assert.equal(isVisitDemoLink("dev-test-../qa", "dev-test-../qa", dev), false);
+  const { business, available } = await getCustomerIntake(
+    link,
+    undefined,
+    true,
+  );
+  assert.equal(business.name, "테스트 업체");
+  assert.equal(available, true);
+  assert.equal(
+    fetchMock.mock.calls[0].arguments[0].href,
+    `${dev}/api/v1/public/intake/${link}`,
+  );
 });
 
 const previousBase = process.env.NEXT_PUBLIC_API_BASE_URL;

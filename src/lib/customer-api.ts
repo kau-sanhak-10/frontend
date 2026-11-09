@@ -22,8 +22,11 @@ type IntakeResponse = {
   termsVersion: string;
 };
 
-export function isIntakeLinkToken(token: string) {
-  return /^[A-Za-z0-9_-]{43}$/.test(token);
+export function isIntakeLinkToken(token: string, visitDemo = false) {
+  return (
+    /^[A-Za-z0-9_-]{43}$/.test(token) ||
+    (visitDemo && /^dev-test-[A-Za-z0-9_-]{1,34}$/.test(token))
+  );
 }
 
 function inquiryAccess(inquiryId: number, token: string) {
@@ -109,8 +112,10 @@ export async function saveCustomerVisitInfo(
 export async function getCustomerIntake(
   linkToken: string,
   signal?: AbortSignal,
+  visitDemo = false,
 ) {
-  if (!isIntakeLinkToken(linkToken)) throw new Error("Invalid intake link");
+  if (!isIntakeLinkToken(linkToken, visitDemo))
+    throw new Error("Invalid intake link");
   const value = await requestApi<IntakeResponse>(
     `/api/v1/public/intake/${encodeURIComponent(linkToken)}`,
     { signal },

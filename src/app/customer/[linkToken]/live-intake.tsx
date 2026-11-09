@@ -42,8 +42,9 @@ export default function CustomerLiveIntake({
   linkToken: string;
   visitDemo: boolean;
 }) {
+  const validLink = isIntakeLinkToken(linkToken, visitDemo);
   const [status, setStatus] = useState<IntakeStatus>(
-    isIntakeLinkToken(linkToken) ? "loading" : "invalid",
+    validLink ? "loading" : "invalid",
   );
   const [business, setBusiness] = useState(emptyBusiness);
   const [attempt, setAttempt] = useState(0);
@@ -51,9 +52,9 @@ export default function CustomerLiveIntake({
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
 
   useEffect(() => {
-    if (!isIntakeLinkToken(linkToken)) return;
+    if (!validLink) return;
     const controller = new AbortController();
-    void getCustomerIntake(linkToken, controller.signal)
+    void getCustomerIntake(linkToken, controller.signal, visitDemo)
       .then(({ business, available }) => {
         if (controller.signal.aborted) return;
         setBusiness(business);
@@ -63,7 +64,7 @@ export default function CustomerLiveIntake({
         if (!controller.signal.aborted) setStatus(linkStatus(error));
       });
     return () => controller.abort();
-  }, [linkToken, attempt]);
+  }, [linkToken, attempt, validLink, visitDemo]);
 
   if (inquiry)
     return (

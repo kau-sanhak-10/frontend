@@ -21,7 +21,7 @@ export function isVisitDemoLink(
   configuredToken: string | undefined,
   apiBase: string | undefined,
 ) {
-  if (linkToken !== configuredToken || !isIntakeLinkToken(linkToken))
+  if (linkToken !== configuredToken || !isIntakeLinkToken(linkToken, true))
     return false;
   const url = URL.parse(apiBase ?? "");
   return (
