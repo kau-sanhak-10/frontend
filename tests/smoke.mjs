@@ -21,7 +21,15 @@ const server = spawn(
     "--port",
     String(port),
   ],
-  { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+  {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      CUSTOMER_PREVIEW_ENABLED: "false",
+      CUSTOMER_LIVE_ENABLED: "false",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
 );
 let logs = "";
 server.stdout.on("data", (chunk) => (logs += chunk));
@@ -47,7 +55,6 @@ try {
   assert.match(home, /href="\/manifest.webmanifest"/);
   for (const [role, title] of Object.entries({
     customer: "고객 문의",
-    owner: "사장님 관리",
     admin: "운영 관리",
   })) {
     assert.ok(home.includes(`href="/${role}"`), `${role} 진입 링크 누락`);
@@ -57,11 +64,37 @@ try {
     assert.ok(html.includes(title), `${role} 화면 구분 실패`);
     assert.ok(html.includes('href="/"'), `${role} 홈 복귀 링크 누락`);
     assert.ok(
-      html.includes("구현되지 않았습니다"),
+      html.includes(
+        role === "customer"
+          ? "후속 작업에서 연결합니다"
+          : "구현되지 않았습니다",
+      ),
       "미구현 기능을 제공 중으로 표시함",
     );
   }
+  // 사장님 홈은 FE-06에서 실제 화면으로 바뀌어 미구현 문구 대신 화면 진입만 확인한다.
+  assert.ok(home.includes('href="/owner"'), "owner 진입 링크 누락");
+  const ownerResponse = await fetch(`${base}/owner`);
+  assert.equal(ownerResponse.status, 200);
+  assert.ok(
+    (await ownerResponse.text()).includes("<title>오늘 | 일로</title>"),
+    "owner 홈 화면 구분 실패",
+  );
   assert.equal((await fetch(`${base}/unknown-role`)).status, 404);
+  assert.equal((await fetch(`${base}/customer/preview`)).status, 404);
+  assert.equal((await fetch(`${base}/customer/${"a".repeat(43)}`)).status, 404);
+  assert.equal(
+    (await fetch(`${base}/customer/consultation-preview`)).status,
+    404,
+  );
+  assert.equal(
+    (await fetch(`${base}/customer/consultation-preview?scene=chat`)).status,
+    404,
+  );
+  assert.equal(
+    (await fetch(`${base}/customer/preview?state=ready`)).status,
+    404,
+  );
   const manifest = await (await fetch(`${base}/manifest.webmanifest`)).json();
   assert.equal(manifest.start_url, "/owner");
   assert.equal(manifest.display, "standalone");

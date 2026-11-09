@@ -18,6 +18,12 @@ export default function Home() {
             <Link href="/owner">사장님 관리 화면</Link>
           </li>
           <li>
+            <Link href="/owner/login">사장님 로그인 (개발용 가짜 인증)</Link>
+          </li>
+          <li>
+            <Link href="/owner/account">사장님 내 계정</Link>
+          </li>
+          <li>
             <Link href="/admin">운영 관리 화면</Link>
           </li>
         </ul>
