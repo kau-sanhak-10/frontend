@@ -84,6 +84,15 @@ export const customerFieldSpecs = {
 
 export type CustomerFieldKey = keyof typeof customerFieldSpecs;
 
+export function isCustomerFieldEditable(
+  key: string,
+  fields: readonly Pick<IntakeField, "key">[],
+) {
+  return (
+    key !== "controller_model" || fields.some((field) => field.key === key)
+  );
+}
+
 async function requestCustomerFields(
   inquiryId: number,
   token: string,

@@ -6,6 +6,7 @@ import { ApiError } from "@/lib/api";
 import {
   customerFieldSpecs,
   getCustomerFields,
+  isCustomerFieldEditable,
   saveCustomerField,
   type CustomerFieldKey,
 } from "@/lib/customer-api";
@@ -80,6 +81,12 @@ export default function CustomerDemoVisit({
 
   async function saveEdit() {
     if (!edit || !fieldsReady || busy || request.current) return;
+    if (!isCustomerFieldEditable(edit.key, fields.fields)) {
+      setFieldError(
+        "조절기 모델명을 수정할 수 없어요. 다른 항목을 선택해 주세요.",
+      );
+      return;
+    }
     if (!edit.value.trim()) {
       setFieldError("수정할 내용을 입력해 주세요.");
       return;
@@ -240,11 +247,18 @@ export default function CustomerDemoVisit({
                   setFieldError("");
                 }}
               >
-                {Object.entries(customerFieldSpecs).map(([key, { label }]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
+                {Object.entries(customerFieldSpecs).map(([key, { label }]) => {
+                  const editable = isCustomerFieldEditable(
+                    key,
+                    fieldsReady ? fields.fields : [],
+                  );
+                  if (!editable && key !== edit.key) return null;
+                  return (
+                    <option key={key} value={key} disabled={!editable}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
               <label htmlFor="intake-edit-value">수정 내용</label>
               <input

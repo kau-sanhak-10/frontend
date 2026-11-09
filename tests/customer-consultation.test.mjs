@@ -13,6 +13,7 @@ import {
   getCustomerIntake,
   getCustomerInquiryVersion,
   getCustomerMessages,
+  isCustomerFieldEditable,
   isWaitingForOwner,
   requestCustomerHandoff,
   saveCustomerField,
@@ -24,6 +25,18 @@ import {
   isVisitDemoLink,
   saveCustomerDemoVisit,
 } from "../src/lib/customer-visit-demo.ts";
+
+test("only edits controller model when the server exposes the field", () => {
+  assert.equal(
+    isCustomerFieldEditable("controller_model", [{ key: "model" }]),
+    false,
+  );
+  assert.equal(
+    isCustomerFieldEditable("controller_model", [{ key: "controller_model" }]),
+    true,
+  );
+  assert.equal(isCustomerFieldEditable("model", []), true);
+});
 
 test("방문 시연은 지정된 테스트 링크와 개발 서버에서만 열린다", () => {
   const link = "demo".padEnd(43, "0");
