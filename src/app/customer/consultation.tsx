@@ -383,9 +383,10 @@ export default function CustomerConsultation({
               <button
                 type="button"
                 className={styles.secondary}
-                onClick={() => setView("fields")}
+                disabled={textOnly && (pending || unsent)}
+                onClick={textOnly ? onContinue : () => setView("fields")}
               >
-                정리된 접수 정보 확인
+                {textOnly ? "시연용 방문정보 입력" : "정리된 접수 정보 확인"}
               </button>
             )}
           </div>

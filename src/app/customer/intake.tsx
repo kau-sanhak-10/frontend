@@ -30,6 +30,7 @@ type Props = {
   onRetry?: () => void;
   onLookup?: () => void;
   textOnly?: boolean;
+  visitDemo?: boolean;
   preview?: boolean;
   previewFailure?: "start" | "visit" | "address" | "region";
 };
@@ -46,6 +47,7 @@ export default function CustomerIntake({
   onRetry,
   onLookup,
   textOnly = false,
+  visitDemo = false,
   preview = false,
   previewFailure,
 }: Props) {
@@ -242,6 +244,11 @@ export default function CustomerIntake({
       {preview && (
         <p className={styles.preview}>
           화면 확인용 · 실제 접수·저장·문자 인증은 하지 않아요.
+        </p>
+      )}
+      {visitDemo && (
+        <p className={styles.preview}>
+          시연용 접수 · 실제 이름, 연락처, 주소를 입력하지 마세요.
         </p>
       )}
       <header className={styles.header}>

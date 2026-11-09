@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { isVisitDemoLink } from "@/lib/customer-visit-demo";
 import CustomerLiveIntake from "./live-intake";
 
 export const metadata: Metadata = {
@@ -15,5 +16,16 @@ export default async function Page({
 }) {
   if (process.env.CUSTOMER_LIVE_ENABLED !== "true") notFound();
   const { linkToken } = await params;
-  return <CustomerLiveIntake key={linkToken} linkToken={linkToken} />;
+  const visitDemo = isVisitDemoLink(
+    linkToken,
+    process.env.CUSTOMER_VISIT_DEMO_LINK_TOKEN,
+    process.env.NEXT_PUBLIC_API_BASE_URL,
+  );
+  return (
+    <CustomerLiveIntake
+      key={linkToken}
+      linkToken={linkToken}
+      visitDemo={visitDemo}
+    />
+  );
 }

@@ -6,13 +6,17 @@ import {
   getCustomerInquiryVersion,
   saveCustomerVisitInfo,
 } from "../src/lib/customer-api.ts";
+import { demoVisitLocations } from "../src/lib/customer-visit-demo.ts";
 
 // Isolated local BE-05 + PostgreSQL only. Use a synthetic test business link.
 const base = "http://127.0.0.1:35111";
 const api = "http://127.0.0.1:35112";
 process.env.NEXT_PUBLIC_API_BASE_URL = api;
 const link = process.env.ILRO_TEST_INTAKE_LINK;
+const regularLink = process.env.ILRO_TEST_REGULAR_LINK;
 assert.match(link ?? "", /^[A-Za-z0-9_-]{43}$/);
+assert.match(regularLink ?? "", /^[A-Za-z0-9_-]{43}$/);
+assert.notEqual(link, regularLink);
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE_PATH
     ? pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href
@@ -29,7 +33,11 @@ const server = spawn(
     "35111",
   ],
   {
-    env: { ...process.env, CUSTOMER_LIVE_ENABLED: "true" },
+    env: {
+      ...process.env,
+      CUSTOMER_LIVE_ENABLED: "true",
+      CUSTOMER_VISIT_DEMO_LINK_TOKEN: link,
+    },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   },
@@ -115,6 +123,7 @@ try {
   );
 
   await page.goto(`${base}/customer/${link}`);
+  await page.getByText(/실제 이름, 연락처, 주소를 입력하지/).waitFor();
   const start = page.getByRole("button", { name: "동의하고 문의 시작" });
   await start.click();
   await page
@@ -180,27 +189,73 @@ try {
   await log.getByText("답변 수신 테스트", { exact: true }).waitFor();
   assert.equal(await waiting.count(), 0);
 
-  // 공개된 시설의 테스트 좌표만 사용. 브라우저에서 주소를 추측하거나 전송하지 않는다.
+  const { origin, destination } = demoVisitLocations;
   const visit = {
-    name: "로컬 테스트",
-    phone: "010-0000-0001",
-    address: "경기 고양시 덕양구 항공대학로 76",
+    name: "일로 시연 고객",
+    phone: "01000000001",
+    address: destination.address,
     addressDetail: "",
     accessNote: "",
     workTypeId: "",
   };
-  const coordinates = { lat: 37.599, lng: 126.8641 };
   const version = await getCustomerInquiryVersion(inquiryId, inquiryToken);
-  const savedVersion = await saveCustomerVisitInfo(
-    inquiryId,
-    inquiryToken,
+  await page.getByRole("button", { name: "시연용 방문정보 입력" }).click();
+  await page.getByRole("heading", { name: "시연용 방문정보" }).waitFor();
+  await page.getByText(origin.address, { exact: false }).waitFor();
+  await page.getByText(destination.address, { exact: false }).waitFor();
+  await page.screenshot({ path: ".next/customer-demo-390.png" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.screenshot({ path: ".next/customer-demo-1280.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const saveUrl = `${api}/api/v1/customer/inquiries/${inquiryId}/visit-info`;
+  const visitSends = [];
+  await page.route(saveUrl, (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    visitSends.push(route.request().postDataJSON());
+    if (visitSends.length > 1) return route.continue();
+    return route.fulfill({
+      status: 503,
+      headers: { "Access-Control-Allow-Origin": base },
+      json: { success: false, code: "TEMPORARY_FAILURE" },
+    });
+  });
+  const save = page.getByRole("button", { name: "한국항공대학교로 저장" });
+  await save.click();
+  await page
+    .getByRole("alert")
+    .getByText(/저장 결과를 확인하지/)
+    .waitFor();
+  const [saved] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url() === saveUrl && response.request().method() === "PUT",
+    ),
+    save.click(),
+  ]);
+  assert.equal(saved.status(), 200);
+  const savedVersion = (await saved.json()).result.version;
+  await page
+    .getByRole("status")
+    .getByText(/방문정보가 저장됐어요/)
+    .waitFor();
+  assert.deepEqual(visitSends[0], visitSends[1]);
+  assert.deepEqual(visitSends[1], {
     version,
-    visit,
-    coordinates,
-  );
+    name: visit.name,
+    phone: visit.phone,
+    address: destination.address,
+    addressDetail: null,
+    lat: destination.lat,
+    lng: destination.lng,
+    accessNote: null,
+    workCategory: null,
+  });
+  await page.getByRole("button", { name: "상담으로 돌아가기" }).last().click();
+  await page.getByRole("log").getByText(text, { exact: true }).waitFor();
+  assert.equal(creates, 1);
   assert.ok(savedVersion > version);
   await assert.rejects(
-    saveCustomerVisitInfo(inquiryId, inquiryToken, version, visit, coordinates),
+    saveCustomerVisitInfo(inquiryId, inquiryToken, version, visit, destination),
     { status: 409, code: "INQUIRY_VERSION_CONFLICT" },
   );
   const readBack = await fetch(
@@ -216,13 +271,45 @@ try {
   assert.equal(result.visitInfo.phone, "01000000001");
   assert.equal(result.version, savedVersion);
   assert.equal(result.reservation, null);
+  if (process.env.ILRO_TEST_OWNER_TOKEN) {
+    const ownerReadBack = await fetch(
+      `${api}/api/v1/owner/inquiries/${inquiryId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.ILRO_TEST_OWNER_TOKEN}`,
+        },
+      },
+    );
+    assert.equal(ownerReadBack.status, 200);
+    assert.equal(
+      (await ownerReadBack.json()).result.visitInfo.address,
+      visit.address,
+    );
+  }
   assert.equal(
     await page.getByRole("button", { name: "사진 첨부" }).count(),
     0,
   );
+  const regular = await browser.newPage();
+  await regular.goto(`${base}/customer/${regularLink}`);
+  await regular.getByRole("checkbox", { name: /개인정보 수집/ }).check();
+  await regular.getByRole("button", { name: "동의하고 문의 시작" }).click();
+  await regular
+    .getByRole("textbox", { name: "메시지", exact: true })
+    .fill(text);
+  await regular.getByRole("button", { name: "메시지 보내기" }).click();
+  await regular.getByRole("log").getByText(text, { exact: true }).waitFor();
+  assert.equal(
+    await regular.getByText(/실제 이름, 연락처, 주소를 입력하지/).count(),
+    0,
+  );
+  assert.equal(
+    await regular.getByRole("button", { name: "시연용 방문정보 입력" }).count(),
+    0,
+  );
   assert.deepEqual(errors, []);
   console.log(
-    "Local BE-05: one retried message, waiting/fetch failure/test reply states, same-inquiry visit save and stale version rejection",
+    "Local browser: one retried message, reply states, visit failure/retry, destination saved to same inquiry, stale version rejected, demo disabled for regular link",
   );
 } finally {
   await browser?.close();

@@ -12,6 +12,20 @@ import {
   saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
+import { isVisitDemoLink } from "../src/lib/customer-visit-demo.ts";
+
+test("방문 시연은 지정된 테스트 링크와 개발 서버에서만 열린다", () => {
+  const link = "demo".padEnd(43, "0");
+  const dev = "https://dev-api.illo.ai.kr";
+  assert.equal(isVisitDemoLink(link, link, dev), true);
+  assert.equal(isVisitDemoLink(link, link, "http://127.0.0.1:35112"), true);
+  assert.equal(isVisitDemoLink(link, undefined, dev), false);
+  assert.equal(isVisitDemoLink(link, "other".padEnd(43, "0"), dev), false);
+  assert.equal(isVisitDemoLink("invalid", "invalid", dev), false);
+  for (const url of [undefined, "https://api.illo.ai.kr", `${dev}.example`]) {
+    assert.equal(isVisitDemoLink(link, link, url), false);
+  }
+});
 
 const previousBase = process.env.NEXT_PUBLIC_API_BASE_URL;
 afterEach(() => {

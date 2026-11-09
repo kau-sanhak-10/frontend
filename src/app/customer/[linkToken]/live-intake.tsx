@@ -16,6 +16,7 @@ import type {
 import type { IntakeBusiness, IntakeStatus } from "@/lib/customer-intake";
 import CustomerConsultation from "../consultation";
 import CustomerIntake from "../intake";
+import CustomerDemoVisit from "./demo-visit";
 
 const emptyBusiness: IntakeBusiness = {
   name: "업체 문의",
@@ -36,8 +37,10 @@ function linkStatus(error: unknown): IntakeStatus {
 
 export default function CustomerLiveIntake({
   linkToken,
+  visitDemo,
 }: {
   linkToken: string;
+  visitDemo: boolean;
 }) {
   const [status, setStatus] = useState<IntakeStatus>(
     isIntakeLinkToken(linkToken) ? "loading" : "invalid",
@@ -63,12 +66,19 @@ export default function CustomerLiveIntake({
   }, [linkToken, attempt]);
 
   if (inquiry)
-    return <LiveConsultation business={business} inquiry={inquiry} />;
+    return (
+      <LiveConsultation
+        business={business}
+        inquiry={inquiry}
+        visitDemo={visitDemo}
+      />
+    );
   return (
     <CustomerIntake
       business={business}
       status={status}
       textOnly
+      visitDemo={visitDemo}
       onRetry={() => {
         setStatus("loading");
         setAttempt((value) => value + 1);
@@ -89,14 +99,17 @@ export default function CustomerLiveIntake({
 function LiveConsultation({
   business,
   inquiry,
+  visitDemo,
 }: {
   business: IntakeBusiness;
   inquiry: Inquiry;
+  visitDemo: boolean;
 }) {
   const { inquiryId, inquiryToken, expiresAt } = inquiry;
   const [messages, setMessages] = useState<CustomerMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [showVisit, setShowVisit] = useState(false);
   const [waitingAfter, setWaitingAfter] = useState<number | null>(null);
   const [slowAfter, setSlowAfter] = useState<number | null>(null);
   const waitingForReply =
@@ -179,6 +192,15 @@ function LiveConsultation({
     setWaitingAfter(aiStatus === "PROCESSING" ? messageId : null);
   }
 
+  if (showVisit && !ended)
+    return (
+      <CustomerDemoVisit
+        inquiryId={inquiryId}
+        inquiryToken={inquiryToken}
+        onBack={() => setShowVisit(false)}
+      />
+    );
+
   return (
     <CustomerConsultation
       businessName={business.name}
@@ -186,6 +208,12 @@ function LiveConsultation({
       fields={[]}
       photoConsent={false}
       textOnly
+      canContinue={
+        visitDemo &&
+        !ended &&
+        messages.some((message) => message.role === "CUSTOMER")
+      }
+      onContinue={visitDemo && !ended ? () => setShowVisit(true) : undefined}
       liveNotice={
         ended
           ? "이 상담에 더 이상 접근할 수 없어요. 업체에 문의해 주세요."
