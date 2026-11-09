@@ -204,6 +204,7 @@ export default function ConsultationPreviewFlow({
             setStage("chat");
           }}
           onSaveVisit={async (input) => {
+            if (failure === "visit") await wait("visit");
             setVisit(input);
             setStage("review");
           }}

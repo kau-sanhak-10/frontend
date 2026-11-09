@@ -32,6 +32,8 @@ type Props = {
   photoRequest?: PhotoRequest;
   handler?: "AI" | "OWNER";
   canContinue?: boolean;
+  textOnly?: boolean;
+  liveNotice?: string;
   onSend?: (input: SendCustomerInput) => Promise<void>;
   onUpload?: (file: File) => Promise<{ photoId: number }>;
   onHandoff?: () => Promise<void>;
@@ -48,6 +50,8 @@ export default function CustomerConsultation({
   photoRequest,
   handler = "AI",
   canContinue = false,
+  textOnly = false,
+  liveNotice,
   onSend,
   onUpload,
   onHandoff,
@@ -267,7 +271,7 @@ export default function CustomerConsultation({
               ? "접수 정보 확인"
               : "덕구와 상담"}
         </h1>
-        {view === "chat" && (
+        {view === "chat" && !textOnly && (
           <button
             type="button"
             className={base.textButton}
@@ -294,6 +298,11 @@ export default function CustomerConsultation({
                 ? "사장님과 직접 상담 중"
                 : `덕구 · ${businessName} AI 접수 도우미`}
             </p>
+            {liveNotice && (
+              <p role="status" className={styles.caption}>
+                {liveNotice}
+              </p>
+            )}
             <div
               role="log"
               aria-label="상담 대화"
@@ -360,7 +369,7 @@ export default function CustomerConsultation({
                 </button>
               </div>
             )}
-            {handler === "AI" && (
+            {handler === "AI" && !textOnly && (
               <button
                 type="button"
                 className={styles.quiet}
@@ -374,9 +383,10 @@ export default function CustomerConsultation({
               <button
                 type="button"
                 className={styles.secondary}
-                onClick={() => setView("fields")}
+                disabled={textOnly && (pending || unsent)}
+                onClick={textOnly ? onContinue : () => setView("fields")}
               >
-                정리된 접수 정보 확인
+                {textOnly ? "시연용 방문정보 입력" : "정리된 접수 정보 확인"}
               </button>
             )}
           </div>
@@ -413,7 +423,7 @@ export default function CustomerConsultation({
                 {error}
               </p>
             )}
-            {!photoConsent && (
+            {!photoConsent && !textOnly && (
               <p className={styles.caption}>
                 사진 전송에 동의하지 않았어요. 글로 계속 상담할 수 있어요.
               </p>
@@ -425,15 +435,22 @@ export default function CustomerConsultation({
                 void send();
               }}
             >
-              <button
-                type="button"
-                className={styles.iconButton}
-                disabled={photoButtonDisabled}
-                aria-label="사진 첨부"
-                onClick={() => files.current?.click()}
-              >
-                <Image src="/customer/plus.svg" width={22} height={22} alt="" />
-              </button>
+              {!textOnly && (
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  disabled={photoButtonDisabled}
+                  aria-label="사진 첨부"
+                  onClick={() => files.current?.click()}
+                >
+                  <Image
+                    src="/customer/plus.svg"
+                    width={22}
+                    height={22}
+                    alt=""
+                  />
+                </button>
+              )}
               <textarea
                 rows={1}
                 aria-label="메시지"
