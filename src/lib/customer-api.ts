@@ -222,7 +222,7 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
   };
   const tickets = new WeakMap<File, Ticket>();
 
-  return async (file: File) => {
+  async function upload(file: File) {
     const issue = validatePhoto(file, 0);
     if (issue) throw new Error(issue);
     let ticket = tickets.get(file);
@@ -273,7 +273,7 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
       tickets.set(file, ticket);
     }
 
-    // ponytail: reuse this file's ticket for retries; server cancellation and cleanup are handled by BE-06.
+    // Reuse this file's ticket when retrying the same draft.
     if (!ticket.transferred) {
       const response = await fetch(ticket.url, {
         method: "PUT",
@@ -310,7 +310,21 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
     if (complete.uploadStatus !== "DONE")
       throw new Error("Photo upload not confirmed");
     return { photoId: ticket.photoId };
-  };
+  }
+
+  async function cancel(file: File) {
+    const ticket = tickets.get(file);
+    if (!ticket) return;
+    const result = await requestApi<{ photoId: number; uploadStatus: string }>(
+      `${path}/photos/${ticket.photoId}`,
+      { method: "DELETE", headers, signal: AbortSignal.timeout(10_000) },
+    );
+    if (result?.photoId !== ticket.photoId || result.uploadStatus !== "FAILED")
+      throw new Error("Photo cancellation not confirmed");
+    tickets.delete(file);
+  }
+
+  return { upload, cancel };
 }
 
 export async function getCustomerMessages(

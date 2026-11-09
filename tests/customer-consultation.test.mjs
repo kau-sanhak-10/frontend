@@ -173,7 +173,7 @@ test("사진 업로드 완료 응답이 끊겨도 같은 티켓으로 완료만 
     if (calls.length === 3) throw new TypeError("Connection lost");
     return reply({ photoId: 12, uploadStatus: "DONE" });
   });
-  const upload = createCustomerPhotoUploader(1, "inq_test");
+  const { upload } = createCustomerPhotoUploader(1, "inq_test");
   await assert.rejects(upload(file), /Connection lost/);
   assert.deepEqual(await upload(file), { photoId: 12 });
   assert.deepEqual(
@@ -181,6 +181,42 @@ test("사진 업로드 완료 응답이 끊겨도 같은 티켓으로 완료만 
     ["POST", "PUT", "POST", "POST"],
   );
   assert.deepEqual(calls[2], calls[3]);
+});
+
+test("미전송 사진 취소는 서버가 같은 사진을 확인할 때만 확정한다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  const file = new File(["test"], "photo.png", { type: "image/png" });
+  let deletes = 0;
+  const fetchMock = mock.method(globalThis, "fetch", async (url, options) => {
+    const reply = (result) =>
+      Response.json({ success: true, code: "OK", message: "OK", result });
+    if (options.method === "PUT") throw new TypeError("Connection lost");
+    if (options.method === "POST")
+      return reply({
+        photoId: 12,
+        method: "PUT",
+        uploadUrl: "https://demo.s3.ap-northeast-2.amazonaws.com/test.png",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+    assert.equal(options.method, "DELETE");
+    assert.equal(url.pathname, "/api/v1/customer/inquiries/1/photos/12");
+    assert.equal(
+      new Headers(options.headers).get("Authorization"),
+      "Bearer inq_test",
+    );
+    return reply({
+      photoId: ++deletes === 1 ? 99 : 12,
+      uploadStatus: "FAILED",
+    });
+  });
+  const { upload, cancel } = createCustomerPhotoUploader(1, "inq_test");
+  await cancel(file);
+  assert.equal(fetchMock.mock.callCount(), 0);
+  await assert.rejects(upload(file), /Connection lost/);
+  await assert.rejects(cancel(file), /not confirmed/);
+  await cancel(file);
+  await cancel(file);
+  assert.equal(deletes, 2);
 });
 
 test("서버가 파일이 없다고 확인하면 같은 티켓으로 사진을 다시 올린다", async () => {
@@ -220,7 +256,7 @@ test("서버가 파일이 없다고 확인하면 같은 티켓으로 사진을 �
           result: { photoId: 12, uploadStatus: "DONE" },
         });
   });
-  const upload = createCustomerPhotoUploader(1, "inq_test");
+  const { upload } = createCustomerPhotoUploader(1, "inq_test");
   const file = new File(["test"], "photo.png", { type: "image/png" });
   await assert.rejects(upload(file), { code: "PHOTO_NOT_UPLOADED" });
   assert.deepEqual(await upload(file), { photoId: 12 });

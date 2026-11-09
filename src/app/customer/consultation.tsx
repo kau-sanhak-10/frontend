@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { ApiError } from "@/lib/api";
 import {
   createClientId,
   consultationError,
@@ -37,6 +38,7 @@ type Props = {
   liveNotice?: string;
   onSend?: (input: SendCustomerInput) => Promise<void>;
   onUpload?: (file: File) => Promise<{ photoId: number }>;
+  onCancelUpload?: (file: File) => Promise<void>;
   onHandoff?: () => Promise<void>;
   onContinue?: () => void;
   onBack?: () => void;
@@ -56,6 +58,7 @@ export default function CustomerConsultation({
   liveNotice,
   onSend,
   onUpload,
+  onCancelUpload,
   onHandoff,
   onContinue,
   onBack,
@@ -241,15 +244,30 @@ export default function CustomerConsultation({
     }
   }
 
-  function remove(id: string) {
-    if (pending) return;
+  async function remove(id: string) {
+    if (busy.current || choosing.current) return;
     const attachment = attachments.find((a) => a.id === id);
-    if (attachment) {
+    if (!attachment) return;
+    busy.current = true;
+    setPending(true);
+    setError("");
+    try {
+      await onCancelUpload?.(attachment.file);
       URL.revokeObjectURL(attachment.url);
       urls.current.delete(attachment.url);
+      uploaded.current.delete(id);
+      setAttachments((current) => current.filter((a) => a.id !== id));
+      draftId.current = null;
+    } catch (failure) {
+      setError(
+        failure instanceof ApiError && failure.code === "PHOTO_ALREADY_ATTACHED"
+          ? "이미 보낸 사진이에요. 보내기를 다시 눌러 전송 결과를 확인해 주세요."
+          : "사진 첨부를 취소하지 못했어요. 잠시 후 다시 눌러 주세요.",
+      );
+    } finally {
+      busy.current = false;
+      setPending(false);
     }
-    setAttachments((current) => current.filter((a) => a.id !== id));
-    draftId.current = null;
   }
 
   const photoButtonDisabled = !photoConsent || !onUpload || pending;
