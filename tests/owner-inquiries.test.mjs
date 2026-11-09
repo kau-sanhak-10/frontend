@@ -24,6 +24,7 @@ const HANBIT = mockBusinessIdOf("01011112222");
 beforeEach(() => {
   mockInquiryConfig.delayMs = 0;
   mockInquiryConfig.fail = false;
+  mockInquiryConfig.saveFail = false;
   mockInquiryConfig.now = () => NOW;
 });
 
@@ -227,4 +228,115 @@ test("공유창이 없으면 복사로, 사장님이 닫으면 오류로 보지 
   };
   assert.equal(await copyLink(url, { copy: broken }), "FAILED");
   assert.equal(await copyLink(url, {}), "FAILED");
+});
+
+test("접수 정보를 고치면 사장님 확인값이 되고 이전 값은 이력에 남는다", async () => {
+  const { updateInquiryFields, resetMockEdits } =
+    await import("../src/lib/owner-inquiries/mock-api.ts");
+  resetMockEdits();
+  const before = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.equal(before.data.version, 1);
+
+  const saved = await updateInquiryFields(HANBIT, "inq-106", {
+    version: 1,
+    changes: [{ key: "model", value: " NCB353 " }],
+  });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.data.version, 2);
+  const model = saved.data.summary.find((f) => f.key === "model");
+  assert.equal(model.value, "NCB353");
+  assert.equal(model.source, "OWNER");
+  assert.equal(model.state, "CONFIRMED");
+  assert.equal(model.history.length, 1);
+  assert.equal(model.history[0].value, null);
+  assert.equal(model.history[0].source, "PHOTO");
+
+  // 다시 불러와도 저장한 값이 유지된다.
+  const after = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.equal(after.data.version, 2);
+  assert.equal(
+    after.data.summary.find((f) => f.key === "model").value,
+    "NCB353",
+  );
+  resetMockEdits();
+});
+
+test("화면을 연 뒤 다른 곳에서 먼저 바뀌면 저장을 거절한다", async () => {
+  const { updateInquiryFields, resetMockEdits } =
+    await import("../src/lib/owner-inquiries/mock-api.ts");
+  resetMockEdits();
+  await updateInquiryFields(HANBIT, "inq-106", {
+    version: 1,
+    changes: [{ key: "model", value: "NCB353" }],
+  });
+  // 예전 화면(version 1)으로 다시 저장하면 충돌
+  const stale = await updateInquiryFields(HANBIT, "inq-106", {
+    version: 1,
+    changes: [{ key: "model", value: "다른 값" }],
+  });
+  assert.deepEqual(stale, { ok: false, code: "CONFLICT" });
+  const now = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.equal(now.data.summary.find((f) => f.key === "model").value, "NCB353");
+  resetMockEdits();
+});
+
+test("저장 실패·빈 값·다른 업체 문의는 저장하지 않는다", async () => {
+  const { updateInquiryFields, resetMockEdits } =
+    await import("../src/lib/owner-inquiries/mock-api.ts");
+  resetMockEdits();
+  const change = { version: 1, changes: [{ key: "model", value: "NCB353" }] };
+
+  mockInquiryConfig.saveFail = true;
+  assert.deepEqual(await updateInquiryFields(HANBIT, "inq-106", change), {
+    ok: false,
+    code: "SAVE_FAILED",
+  });
+  mockInquiryConfig.saveFail = false;
+
+  assert.deepEqual(
+    await updateInquiryFields(HANBIT, "inq-106", {
+      version: 1,
+      changes: [{ key: "model", value: "   " }],
+    }),
+    { ok: false, code: "INVALID" },
+  );
+  assert.deepEqual(await updateInquiryFields(HANBIT, "inq-901", change), {
+    ok: false,
+    code: "NOT_FOUND",
+  });
+
+  const unchanged = await fetchInquiryDetail(HANBIT, "inq-106");
+  assert.equal(unchanged.data.version, 1);
+  assert.equal(
+    unchanged.data.summary.find((f) => f.key === "model").value,
+    null,
+  );
+});
+
+test("수정 화면은 실제로 바뀐 항목만 저장하고 값을 지우면 막는다", async () => {
+  const { collectChanges, initialDraft } =
+    await import("../src/lib/owner-inquiries/rules.ts");
+  const res = await fetchInquiryDetail(HANBIT, "inq-106");
+  const draft = initialDraft(res.data.summary);
+  // 미확인 모델명은 빈칸으로 시작한다.
+  assert.equal(draft.model, "");
+  assert.equal(draft.manufacturer, "경동나비엔");
+
+  // 아무것도 안 바꾸면 보낼 것이 없다. 미확인을 비워 둬도 오류가 아니다.
+  assert.deepEqual(collectChanges(res.data.summary, draft), {
+    changes: [],
+    errors: {},
+  });
+
+  // 바꾼 항목만 보낸다. 앞뒤 공백은 지운다.
+  const edited = { ...draft, model: " NCB353 " };
+  assert.deepEqual(collectChanges(res.data.summary, edited).changes, [
+    { key: "model", value: "NCB353" },
+  ]);
+
+  // 값이 있던 항목을 지우면 저장하지 않고 이유를 알려 준다.
+  const cleared = { ...draft, manufacturer: "  " };
+  const result = collectChanges(res.data.summary, cleared);
+  assert.deepEqual(result.changes, []);
+  assert.ok(result.errors.manufacturer);
 });

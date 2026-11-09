@@ -7,7 +7,10 @@ import { StatusPanel } from "../_components/status-panel";
 import { useLoad } from "../_components/use-load";
 import auth from "../_components/owner-auth.module.css";
 import styles from "../_components/owner-inquiries.module.css";
-import { fetchIntakeLink } from "@/lib/owner-inquiries/mock-api";
+import {
+  loadIntakeLink,
+  type InquirySource,
+} from "@/lib/owner-inquiries/source";
 import {
   browserShareTools,
   copyLink,
@@ -20,7 +23,7 @@ import type { IntakeLink } from "@/lib/owner-inquiries/types";
 export function IntakeLinkScreen() {
   return (
     <OwnerGate screenName="문의 링크">
-      {({ businessId }) => <IntakeLinkBody businessId={businessId} />}
+      {({ source }) => <IntakeLinkBody source={source} />}
     </OwnerGate>
   );
 }
@@ -32,8 +35,8 @@ const OUTCOME_MESSAGE: Record<ShareOutcome, string | null> = {
   FAILED: "복사하지 못했어요. 주소를 길게 눌러 직접 복사해 주세요.",
 };
 
-function IntakeLinkBody({ businessId }: { businessId: string }) {
-  const fetcher = useCallback(() => fetchIntakeLink(businessId), [businessId]);
+function IntakeLinkBody({ source }: { source: InquirySource }) {
+  const fetcher = useCallback(() => loadIntakeLink(source), [source]);
   const { result, reload } = useLoad(fetcher);
   return (
     <main className={auth.page}>

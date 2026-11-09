@@ -1,8 +1,10 @@
 "use client";
 
+import type { InquirySource } from "@/lib/owner-inquiries/source";
+
 import Link from "next/link";
 import { OwnerGate } from "../../_components/owner-gate";
-import { OwnerPhoto } from "../../_components/owner-photo";
+import { OwnerPhoto, PhotoRefreshContext } from "../../_components/owner-photo";
 import auth from "../../_components/owner-auth.module.css";
 import styles from "../../_components/owner-inquiries.module.css";
 import { DetailError, DetailSkeleton } from "./detail-states";
@@ -30,21 +32,22 @@ import type {
 export function InquiryDetailView({ inquiryId }: { inquiryId: string }) {
   return (
     <OwnerGate screenName="접수 상세">
-      {({ businessId }) => (
-        <DetailBody businessId={businessId} inquiryId={inquiryId} />
-      )}
+      {({ source }) => <DetailBody source={source} inquiryId={inquiryId} />}
     </OwnerGate>
   );
 }
 
 function DetailBody({
-  businessId,
+  source,
   inquiryId,
 }: {
-  businessId: string;
+  source: InquirySource;
   inquiryId: string;
 }) {
-  const { result, loadedAt, reload } = useInquiryDetail(businessId, inquiryId);
+  const { result, loadedAt, reload, refresh } = useInquiryDetail(
+    source,
+    inquiryId,
+  );
 
   return (
     <main className={auth.page}>
@@ -72,7 +75,9 @@ function DetailBody({
       ) : !result.ok ? (
         <DetailError code={result.code} onRetry={() => void reload()} />
       ) : (
-        <DetailContent inquiry={result.data} now={loadedAt} />
+        <PhotoRefreshContext.Provider value={() => void refresh()}>
+          <DetailContent inquiry={result.data} now={loadedAt} />
+        </PhotoRefreshContext.Provider>
       )}
     </main>
   );
@@ -219,17 +224,12 @@ function DetailContent({
       ) : null}
 
       <div className={auth.footer}>
-        <button
-          type="button"
-          className={`${auth.button} ${auth.primary} ${auth.full}`}
-          disabled
-          aria-describedby="edit-pending"
+        <Link
+          href={`/owner/inquiries/${inquiry.id}/edit`}
+          className={`${auth.button} ${auth.primary} ${auth.full} ${styles.plainLink}`}
         >
           접수 정보 수정
-        </button>
-        <p id="edit-pending" className={auth.hint}>
-          접수 정보 수정은 준비 중이에요.
-        </p>
+        </Link>
       </div>
     </>
   );
@@ -258,6 +258,12 @@ function SummaryRow({
           <span className={styles.interpretTag}>매뉴얼 해석</span>
         ) : null}
       </dd>
+      {field.history?.length ? (
+        <dd className={styles.fieldNote}>
+          사장님이 고친 값이에요 · 이전 값:{" "}
+          {field.history.at(-1)?.value ?? "미확인"}
+        </dd>
+      ) : null}
       {field.reason || field.evidence ? (
         <dd className={styles.fieldNote}>
           {field.reason ? <span>{field.reason}</span> : null}
