@@ -184,6 +184,18 @@ function DetailContent({
         <p className={styles.quote}>“{inquiry.customerDescription}”</p>
       </section>
 
+      {inquiry.visitAddress && !inquiry.reservation ? (
+        <section className={styles.infoCard}>
+          <h3 className={styles.infoCardTitle}>방문 정보</h3>
+          <dl className={styles.fieldList}>
+            <div className={styles.field}>
+              <dt className={styles.fieldLabel}>주소</dt>
+              <dd className={styles.fieldValue}>{inquiry.visitAddress}</dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
       {inquiry.reservation ? (
         <section className={styles.infoCard}>
           <h3 className={styles.infoCardTitle}>방문 예약</h3>

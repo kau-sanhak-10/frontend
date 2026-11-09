@@ -8,7 +8,10 @@ const { chromium } = await import(
     ? pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href
     : "playwright"
 );
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
+});
 try {
   const context = await browser.newContext();
   const owner = {
@@ -19,6 +22,7 @@ try {
   };
   const expiresAt = new Date(Date.now() + 600_000).toISOString();
   let logoutAttempts = 0;
+  let inquiryReads = 0;
   await context.route("**/*", async (route) => {
     const request = route.request();
     const { origin, pathname } = new URL(request.url());
@@ -70,6 +74,30 @@ try {
           autoBookingEnabled: false,
           intakePaused: false,
         });
+      case "GET /api/v1/owner/home":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply({ todayVisits: [] });
+      case "GET /api/v1/owner/inquiries":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        inquiryReads++;
+        return reply({
+          isLast: true,
+          content: [
+            {
+              inquiryId: 1402,
+              status: "COLLECTING",
+              handlerMode: "AI",
+              safetyFlag: false,
+              customerName: "테스트고객",
+              customerPhone: "01000000001",
+              address: "고양시 덕양구",
+              workCategory: "REPAIR",
+              symptom: "시연 문의: 온수가 나오지 않아요",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        });
       case "POST /api/v1/auth/logout":
         assert.equal(request.headers().authorization, "Bearer own_test");
         return ++logoutAttempts === 1
@@ -97,6 +125,13 @@ try {
   await login.click();
   await page.getByRole("heading", { name: owner.businessName }).waitFor();
   assert.equal(await page.getByRole("note").count(), 0);
+  await page.getByRole("link", { name: "접수", exact: true }).click();
+  await page.locator('a[href="/owner/inquiries/1402"]').waitFor();
+  assert.ok(
+    inquiryReads > 0,
+    "실제 로그인에서 인증된 문의 조회가 실행되어야 합니다",
+  );
+  await page.goto(`${base}/owner`);
   await page.reload();
   await page.getByRole("link", { name: "내 계정" }).click();
   await page.getByText("로그인 번호 010-••••-0000").waitFor();

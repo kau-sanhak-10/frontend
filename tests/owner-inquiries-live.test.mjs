@@ -244,6 +244,19 @@ test("상세 항목의 출처·미확인 이유·근거·이력을 그대로 옮
   assert.equal(d.summaryUpdatedAt, Date.parse("2026-11-09T11:00:00+09:00"));
 });
 
+test("예약 전에도 고객이 저장한 방문 주소를 유지한다", () => {
+  const waiting = {
+    ...detail,
+    status: "COLLECTING",
+    reservation: null,
+    visitInfo: { ...detail.visitInfo, addressDetail: "101동" },
+  };
+  assert.equal(
+    mapDetail(waiting, messages).visitAddress,
+    "화정동 ○○아파트 101동",
+  );
+});
+
 test("항목이 하나도 정리되지 않았으면 요약 없음으로 보고 대화는 유지한다", () => {
   const empty = {
     ...detail,

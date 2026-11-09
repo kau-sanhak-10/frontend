@@ -339,6 +339,20 @@ export async function createCustomerInquiry(
   };
 }
 
+export async function requestCustomerHandoff(inquiryId: number, token: string) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const result = await requestApi<{ handoffId: number; status: string }>(
+    `${path}/handoff-requests`,
+    { method: "POST", headers, signal: AbortSignal.timeout(10_000) },
+  );
+  if (
+    !Number.isSafeInteger(result?.handoffId) ||
+    result.handoffId <= 0 ||
+    !["WAITING", "IN_PROGRESS"].includes(result.status)
+  )
+    throw new Error("Invalid handoff response");
+}
+
 export async function sendCustomerMessage(
   inquiryId: number,
   token: string,

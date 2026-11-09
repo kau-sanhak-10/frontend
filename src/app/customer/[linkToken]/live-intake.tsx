@@ -8,6 +8,7 @@ import {
   getCustomerIntake,
   getCustomerMessages,
   isIntakeLinkToken,
+  requestCustomerHandoff,
   sendCustomerMessage,
 } from "@/lib/customer-api";
 import type {
@@ -127,6 +128,7 @@ function LiveConsultation({
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
+  const [ownerRequested, setOwnerRequested] = useState(false);
   const [waitingAfter, setWaitingAfter] = useState<number | null>(null);
   const [slowAfter, setSlowAfter] = useState<number | null>(null);
   const waitingForReply =
@@ -228,6 +230,7 @@ function LiveConsultation({
       businessName={business.name}
       messages={messages}
       fields={[]}
+      handler={ownerRequested ? "OWNER" : "AI"}
       photoConsent={photoConsent}
       photosEnabled={photoDemo}
       textOnly
@@ -240,15 +243,26 @@ function LiveConsultation({
       liveNotice={
         ended
           ? "이 상담에 더 이상 접근할 수 없어요. 업체에 문의해 주세요."
-          : loadFailed
-            ? "새 답변을 불러오지 못했어요. 연결되면 다시 확인할게요."
-            : waitingForReply
-              ? slowAfter === waitingAfter
-                ? "보낸 내용은 저장됐어요. 아직 답변이 도착하지 않았어요."
-                : "메시지를 보냈어요. 답변을 기다리고 있어요."
-              : undefined
+          : ownerRequested
+            ? "사장님에게 직접 상담 요청을 전달했어요."
+            : loadFailed
+              ? "새 답변을 불러오지 못했어요. 연결되면 다시 확인할게요."
+              : waitingForReply
+                ? slowAfter === waitingAfter
+                  ? "보낸 내용은 저장됐어요. 아직 답변이 도착하지 않았어요."
+                  : "메시지를 보냈어요. 답변을 기다리고 있어요."
+                : undefined
       }
       onSend={ended ? undefined : send}
+      onHandoff={
+        ended
+          ? undefined
+          : async () => {
+              await requestCustomerHandoff(inquiryId, inquiryToken);
+              setOwnerRequested(true);
+              setWaitingAfter(null);
+            }
+      }
       onUpload={!ended && photoConsent ? uploadPhoto : undefined}
     />
   );

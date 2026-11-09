@@ -379,7 +379,7 @@ export default function CustomerConsultation({
                 </button>
               </div>
             )}
-            {handler === "AI" && !textOnly && (
+            {handler === "AI" && onHandoff && (
               <button
                 type="button"
                 className={styles.quiet}

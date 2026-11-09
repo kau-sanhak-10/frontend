@@ -12,6 +12,7 @@ import {
   getCustomerIntake,
   getCustomerInquiryVersion,
   getCustomerMessages,
+  requestCustomerHandoff,
   saveCustomerVisitInfo,
   sendCustomerMessage,
 } from "../src/lib/customer-api.ts";
@@ -255,6 +256,22 @@ test("사진만 전송할 때 빈 본문을 서버에 null로 보낸다", async 
     content: null,
     photoIds: [3],
   });
+});
+test("직접 상담은 문의 토큰으로 Spring에 요청하고 성공한 상태만 안내한다", async () => {
+  const fetch = respond({ handoffId: 3, status: "WAITING" });
+  await requestCustomerHandoff(10, "inq_test");
+  const [url, options] = fetch.mock.calls[0].arguments;
+  assert.match(String(url), /\/customer\/inquiries\/10\/handoff-requests$/);
+  assert.equal(options.method, "POST");
+  assert.equal(
+    new Headers(options.headers).get("Authorization"),
+    "Bearer inq_test",
+  );
+  respond({ handoffId: 3, status: "DONE" });
+  await assert.rejects(
+    requestCustomerHandoff(10, "inq_test"),
+    /Invalid handoff response/,
+  );
 });
 test("입력·권한 정보가 잘못되면 요청하지 않고 잘못된 성공 응답을 거절한다", async () => {
   const fetch = respond({});

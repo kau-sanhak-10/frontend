@@ -63,7 +63,16 @@ export default function CustomerDemoVisit({
     } catch (error) {
       if (controller.signal.aborted) return;
       const status = error instanceof ApiError ? error.status : undefined;
-      if (status === 409 || status === 422) {
+      if (
+        error instanceof ApiError &&
+        error.code === "INQUIRY_VERSION_CONFLICT"
+      ) {
+        version.current = null;
+        setState("idle");
+        setError(
+          "접수 내용이 갱신됐어요. 방문정보를 확인하고 다시 저장해 주세요.",
+        );
+      } else if (status === 409 || status === 422) {
         setState("blocked");
         setError(
           "이 상태에서는 다시 저장할 수 없어요. 상담으로 돌아가 문의를 확인해 주세요.",

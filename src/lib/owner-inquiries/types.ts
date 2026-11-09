@@ -123,6 +123,7 @@ export type InquirySummary = {
 
 /** 접수 상세 */
 export type InquiryDetail = InquirySummary & {
+  visitAddress?: string;
   customerDescription: string;
   summary: SummaryField[];
   /** 요약 생성에 실패했으면 null. 대화·사진은 그대로 보여 줍니다. */

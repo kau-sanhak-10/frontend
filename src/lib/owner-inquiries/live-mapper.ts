@@ -90,6 +90,7 @@ export type ServerDetail = {
   visitInfo: {
     name: string | null;
     address: string | null;
+    addressDetail?: string | null;
     workCategory: ServerWorkCategory | null;
   } | null;
   fields: ServerFieldDetail[];
@@ -326,6 +327,9 @@ export function mapDetail(
         }
       : undefined,
     customerDescription: firstCustomer?.content ?? "",
+    visitAddress: address
+      ? [address, detail.visitInfo?.addressDetail].filter(Boolean).join(" ")
+      : undefined,
     summary,
     // 항목이 하나도 정리되지 않았으면 요약이 없는 것으로 봅니다. 대화·사진은 그대로 보여 줍니다.
     summaryUpdatedAt: updates.length ? Math.max(...updates) : null,
