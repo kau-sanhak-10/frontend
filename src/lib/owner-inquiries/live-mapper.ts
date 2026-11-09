@@ -107,6 +107,13 @@ export type ServerMessage = {
   createdAt: string;
 };
 
+/** 사진 보기용 짧은 유효기간 주소 (BE-06) */
+export type ServerPhotoUrl = {
+  photoId: number;
+  url: string | null;
+  expiresAt: string;
+};
+
 export type ServerIntakeLink = {
   status: string;
   url: string | null;
@@ -290,7 +297,7 @@ export function mapDetail(
   const updates = detail.fields
     .map((f) => (f.updatedAt ? time(f.updatedAt) : 0))
     .filter((t) => t > 0);
-  // 보기용 사진 주소는 별도 API가 필요해서 지금은 빈 주소로 둡니다. (화면은 '사진' 자리만 보여 줌)
+  // 보기용 주소는 live-api.ts가 사진마다 따로 받아 채웁니다.
   const photos: InquiryPhoto[] = detail.photos.map((p, i) => ({
     id: String(p.photoId),
     url: "",

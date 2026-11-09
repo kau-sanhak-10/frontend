@@ -25,6 +25,19 @@ export function useInquiryDetail(source: InquirySource, inquiryId: string) {
     }
   }, [source, inquiryId]);
 
+  /**
+   * 화면을 비우지 않고 조용히 다시 불러옵니다. (만료된 사진 주소를 새로 받을 때)
+   * 실패하면 지금 보이는 내용을 그대로 둡니다.
+   */
+  const refresh = useCallback(async () => {
+    const id = ++requestId.current;
+    const res = await loadInquiryDetail(source, inquiryId);
+    if (id === requestId.current && res.ok) {
+      setLoadedAt(Date.now());
+      setResult(res);
+    }
+  }, [source, inquiryId]);
+
   useEffect(() => {
     // 화면에 들어오면 한 번 불러옵니다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -34,5 +47,5 @@ export function useInquiryDetail(source: InquirySource, inquiryId: string) {
     };
   }, [load]);
 
-  return { result, loadedAt, reload: load };
+  return { result, loadedAt, reload: load, refresh };
 }

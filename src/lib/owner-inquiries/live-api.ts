@@ -12,6 +12,7 @@ import {
   type ServerIntakeLink,
   type ServerListPage,
   type ServerMessage,
+  type ServerPhotoUrl,
 } from "./live-mapper.ts";
 import type {
   FieldChange,
@@ -98,10 +99,44 @@ export async function fetchInquiryDetailLive(
       ),
       loadMessages(token, inquiryId),
     ]);
-    return { ok: true, data: mapDetail(detail, messages) };
+    const mapped = mapDetail(detail, messages);
+    return { ok: true, data: await withPhotoUrls(token, mapped) };
   } catch (error) {
     return loadFailure(error);
   }
+}
+
+/**
+ * 사진 보기용 주소를 붙입니다. (BE-06 GET …/photos/{photoId}/url)
+ * 주소는 5분 뒤 만료돼 상세를 불러올 때마다 새로 받고, 만료되면 화면이 다시 받습니다.
+ * 한 장이 실패해도 다른 사진과 상세는 그대로 보여 줍니다. (주소 없는 사진은 '사진' 자리만 표시)
+ */
+async function withPhotoUrls(
+  token: string,
+  detail: InquiryDetail,
+): Promise<InquiryDetail> {
+  if (detail.photos.length === 0) return detail;
+  const results = await Promise.allSettled(
+    detail.photos.map((photo) =>
+      requestApi<ServerPhotoUrl>(
+        `/api/v1/owner/inquiries/${encodeURIComponent(detail.id)}/photos/${encodeURIComponent(photo.id)}/url`,
+        { headers: auth(token) },
+      ),
+    ),
+  );
+  return {
+    ...detail,
+    photos: detail.photos.map((photo, i) => {
+      const r = results[i];
+      return r.status === "fulfilled" && r.value.url
+        ? {
+            ...photo,
+            url: r.value.url,
+            expiresAt: Date.parse(r.value.expiresAt),
+          }
+        : photo;
+    }),
+  };
 }
 
 /** 업체 전용 접수 링크 (BE-04) */

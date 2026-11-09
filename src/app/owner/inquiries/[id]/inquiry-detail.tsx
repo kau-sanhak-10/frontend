@@ -4,7 +4,7 @@ import type { InquirySource } from "@/lib/owner-inquiries/source";
 
 import Link from "next/link";
 import { OwnerGate } from "../../_components/owner-gate";
-import { OwnerPhoto } from "../../_components/owner-photo";
+import { OwnerPhoto, PhotoRefreshContext } from "../../_components/owner-photo";
 import auth from "../../_components/owner-auth.module.css";
 import styles from "../../_components/owner-inquiries.module.css";
 import { DetailError, DetailSkeleton } from "./detail-states";
@@ -44,7 +44,10 @@ function DetailBody({
   source: InquirySource;
   inquiryId: string;
 }) {
-  const { result, loadedAt, reload } = useInquiryDetail(source, inquiryId);
+  const { result, loadedAt, reload, refresh } = useInquiryDetail(
+    source,
+    inquiryId,
+  );
 
   return (
     <main className={auth.page}>
@@ -72,7 +75,9 @@ function DetailBody({
       ) : !result.ok ? (
         <DetailError code={result.code} onRetry={() => void reload()} />
       ) : (
-        <DetailContent inquiry={result.data} now={loadedAt} />
+        <PhotoRefreshContext.Provider value={() => void refresh()}>
+          <DetailContent inquiry={result.data} now={loadedAt} />
+        </PhotoRefreshContext.Provider>
       )}
     </main>
   );

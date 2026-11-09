@@ -83,6 +83,8 @@ export type InquiryPhoto = {
   id: string;
   /** 목업은 public/ 아래 예시 이미지 경로를 씁니다. 실제로는 서버가 준 주소입니다. */
   url: string;
+  /** 실제 서버 주소는 5분 뒤 만료됩니다. 지나면 주소를 새로 받아야 합니다. (목업은 없음) */
+  expiresAt?: number;
   alt: string;
 };
 

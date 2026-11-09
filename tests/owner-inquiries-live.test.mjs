@@ -427,3 +427,51 @@ test("목록은 마지막 쪽까지 이어서 불러온다", async () => {
     2,
   );
 });
+
+test("상세 사진에 보기용 주소를 붙이고, 한 장이 실패해도 상세는 보여 준다", async () => {
+  const { fetchInquiryDetailLive } =
+    await import("../src/lib/owner-inquiries/live-api.ts");
+  const twoPhotos = {
+    ...detail,
+    photos: [
+      {
+        photoId: 7,
+        messageId: 2,
+        mimeType: "image/jpeg",
+        createdAt: "2026-11-09T10:04:00+09:00",
+      },
+      {
+        photoId: 8,
+        messageId: 2,
+        mimeType: "image/jpeg",
+        createdAt: "2026-11-09T10:04:30+09:00",
+      },
+    ],
+  };
+  const calls = fakeServer((path) => {
+    if (path === "/api/v1/owner/inquiries/12") return ok(twoPhotos);
+    if (path.startsWith("/api/v1/owner/inquiries/12/messages"))
+      return ok({ messages, hasMore: false });
+    if (path === "/api/v1/owner/inquiries/12/photos/7/url") {
+      return ok({
+        photoId: 7,
+        url: "https://files.example.test/7.jpg?sig=a",
+        expiresAt: "2026-11-09T10:10:00+09:00",
+      });
+    }
+    return [
+      500,
+      { success: false, code: "INTERNAL", message: "오류", result: null },
+    ];
+  });
+  const res = await fetchInquiryDetailLive("own_token", "12");
+  assert.equal(res.ok, true);
+  assert.equal(
+    res.data.photos[0].url,
+    "https://files.example.test/7.jpg?sig=a",
+  );
+  assert.equal(res.data.photos[1].url, "");
+  assert.ok(
+    calls.some((c) => c.path === "/api/v1/owner/inquiries/12/photos/8/url"),
+  );
+});
