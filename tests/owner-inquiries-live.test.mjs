@@ -391,14 +391,25 @@ test("수정 저장은 version과 서버 항목 이름으로 보내고, 충돌�
   });
 });
 
-test("저장에 성공하면 최신 상세를 다시 불러온다", async () => {
+test("저장 성공 응답의 새 버전과 값을 사용하며 추가 조회 실패에 영향을 받지 않는다", async () => {
   const { updateInquiryFieldsLive } =
     await import("../src/lib/owner-inquiries/live-api.ts");
   const calls = fakeServer((path, init) => {
-    if (init.method === "PATCH") return ok(detail);
-    if (path.startsWith("/api/v1/owner/inquiries/12/messages"))
-      return ok({ messages, hasMore: false });
-    return ok({ ...detail, version: 4 });
+    if (init.method === "PATCH")
+      return ok({
+        ...detail,
+        version: 4,
+        fields: [
+          field({
+            fieldKey: "model",
+            value: "NCB353",
+            source: "OWNER",
+            status: "CONFIRMED",
+            unconfirmedReason: null,
+          }),
+        ],
+      });
+    assert.fail(`Unexpected follow-up request: ${path}`);
   });
   const res = await updateInquiryFieldsLive("own_token", "12", {
     version: 3,
@@ -406,10 +417,13 @@ test("저장에 성공하면 최신 상세를 다시 불러온다", async () => 
   });
   assert.equal(res.ok, true);
   assert.equal(res.data.version, 4);
-  assert.ok(
-    calls.some(
-      (c) => c.path === "/api/v1/owner/inquiries/12" && c.method === "GET",
-    ),
+  assert.equal(
+    res.data.summary.find((f) => f.key === "model")?.value,
+    "NCB353",
+  );
+  assert.deepEqual(
+    calls.map((c) => c.method),
+    ["PATCH"],
   );
 });
 
