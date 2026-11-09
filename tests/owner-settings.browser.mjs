@@ -5,6 +5,7 @@ const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE || "playwright"
 );
 const base = process.env.PREVIEW_BASE_URL || "http://127.0.0.1:3112";
+const origin = new URL(base).origin;
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [],
@@ -12,8 +13,8 @@ const errors = [],
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("request", (request) => {
   if (
-    !new URL(request.url()).origin.startsWith(new URL(base).origin) &&
-    /^https?:/.test(request.url())
+    /^https?:/.test(request.url()) &&
+    new URL(request.url()).origin !== origin
   )
     external.push(request.url());
 });
@@ -74,6 +75,9 @@ try {
     await page
       .getByText("업체명을 1~100자로 입력해 주세요.", { exact: true })
       .waitFor();
+    await page.waitForFunction(
+      () => document.activeElement?.id === "businessName",
+    );
     await name.fill("확인 업체");
     const service = page.getByLabel("제공 서비스 안내 (선택)", { exact: true });
     await service.fill("");
@@ -86,6 +90,33 @@ try {
     await page.getByRole("alert").filter({ hasText: "다시 저장" }).waitFor();
     assert.equal(await name.inputValue(), "확인 업체");
     await save();
+  });
+  await check("잘못된 대표 연락처 차단·긴 업체명 줄바꿈", async () => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await open("업체정보");
+    const phone = page.getByLabel("대표 연락처 (선택)", { exact: true });
+    await phone.fill("0-------");
+    await page
+      .getByRole("button", { name: "변경사항 저장", exact: true })
+      .click();
+    await page
+      .getByText("대표 연락처를 확인해 주세요.", { exact: true })
+      .waitFor();
+    await page.waitForFunction(
+      () => document.activeElement?.id === "contactPhone",
+    );
+    await phone.fill("1588-1234");
+    const longName = "W".repeat(100);
+    await page.getByLabel("업체 이름", { exact: true }).fill(longName);
+    await save();
+    await back();
+    await page.getByRole("heading", { name: longName, exact: true }).waitFor();
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
   });
   await check("시간 역전·점심·정수 한도 검증", async () => {
     await open("영업시간");
@@ -192,6 +223,52 @@ try {
       .getByRole("button", { name: /신규 접수 중지 · 자동 예약 꺼짐/ })
       .waitFor();
   });
+  await check(
+    "예약 저장 전 방문지역 재검사·활성화 후 필수 설정 유지",
+    async () => {
+      await open("접수·예약");
+      await page.getByLabel("자동 예약 켜기", { exact: true }).check();
+      await back();
+      await open("방문지역");
+      const remove = page.getByRole("button", {
+        name: "경기 고양시 덕양구 삭제",
+        exact: true,
+      });
+      await remove.click();
+      await save();
+      await back();
+      await open("접수·예약");
+      await page
+        .getByRole("button", { name: "변경사항 저장", exact: true })
+        .click();
+      await page
+        .getByRole("alert")
+        .filter({ hasText: "먼저 방문지역" })
+        .waitFor();
+      await back();
+      await page.getByRole("button", { name: /자동 예약 꺼짐/ }).waitFor();
+      await open("방문지역");
+      await page
+        .getByRole("button", { name: "경기 고양시 덕양구 추가", exact: true })
+        .click();
+      await save();
+      await back();
+      await open("접수·예약");
+      await save();
+      await back();
+      await open("방문지역");
+      await remove.click();
+      await page
+        .getByRole("button", { name: "변경사항 저장", exact: true })
+        .click();
+      await page
+        .getByRole("alert")
+        .filter({ hasText: "자동 예약을 끈 뒤 변경" })
+        .waitFor();
+      await back();
+      await page.getByRole("button", { name: /^방문지역 1개 지역$/ }).waitFor();
+    },
+  );
   const directory = resolve(".impeccable/review");
   await mkdir(directory, { recursive: true });
   for (const width of [320, 390, 411, 1440]) {

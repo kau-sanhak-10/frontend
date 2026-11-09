@@ -7,6 +7,7 @@ import {
   emptyVisitInfo,
   intakeStatusCopy,
   validateVisitInfo,
+  visitAccessNoteMaxLength,
   type IntakeBusiness,
   type IntakeStatus,
   type VisitErrors,
@@ -20,12 +21,16 @@ type Props = {
   business: IntakeBusiness;
   status?: IntakeStatus;
   initialStep?: "entry" | "visit";
+  initialVisit?: VisitInfo;
+  onBackToChat?: (input: VisitInfo) => void;
   onStart?: (input: {
     consents: { type: "PRIVACY_REQUIRED" | "PHOTO"; termsVersion: string }[];
   }) => Promise<void>;
   onSaveVisit?: (input: VisitInfo) => Promise<void>;
   onRetry?: () => void;
   onLookup?: () => void;
+  textOnly?: boolean;
+  visitDemo?: boolean;
   preview?: boolean;
   previewFailure?: "start" | "visit" | "address" | "region";
 };
@@ -35,10 +40,14 @@ export default function CustomerIntake({
   business,
   status = "ready",
   initialStep = "entry",
+  initialVisit = emptyVisitInfo,
+  onBackToChat,
   onStart,
   onSaveVisit,
   onRetry,
   onLookup,
+  textOnly = false,
+  visitDemo = false,
   preview = false,
   previewFailure,
 }: Props) {
@@ -46,7 +55,7 @@ export default function CustomerIntake({
   const [privacy, setPrivacy] = useState(false);
   const [photo, setPhoto] = useState(false);
   const [consentError, setConsentError] = useState("");
-  const [visit, setVisit] = useState<VisitInfo>({ ...emptyVisitInfo });
+  const [visit, setVisit] = useState<VisitInfo>({ ...initialVisit });
   const [errors, setErrors] = useState<VisitErrors>({});
   const [requestError, setRequestError] = useState("");
   const [pending, setPending] = useState(false);
@@ -84,7 +93,7 @@ export default function CustomerIntake({
     try {
       const consents: Parameters<NonNullable<Props["onStart"]>>[0]["consents"] =
         [{ type: "PRIVACY_REQUIRED", termsVersion: business.termsVersion }];
-      if (photo)
+      if (photo && !textOnly)
         consents.push({ type: "PHOTO", termsVersion: business.termsVersion });
       if (preview) {
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -237,6 +246,11 @@ export default function CustomerIntake({
           화면 확인용 · 실제 접수·저장·문자 인증은 하지 않아요.
         </p>
       )}
+      {visitDemo && (
+        <p className={styles.preview}>
+          시연용 접수 · 실제 이름, 연락처, 주소를 입력하지 마세요.
+        </p>
+      )}
       <header className={styles.header}>
         {step !== "entry" && (
           <button
@@ -244,7 +258,11 @@ export default function CustomerIntake({
             type="button"
             disabled={pending}
             aria-label="이전 화면"
-            onClick={() => move(back as Step)}
+            onClick={() =>
+              step === "visit" && onBackToChat
+                ? onBackToChat(visit)
+                : move(back as Step)
+            }
           >
             <Image src="/customer/back.svg" alt="" width={22} height={22} />
           </button>
@@ -266,7 +284,9 @@ export default function CustomerIntake({
         >
           <h2>{intakeStatusCopy[activeStatus].title}</h2>
           <p role={activeStatus === "loading" ? "status" : undefined}>
-            {intakeStatusCopy[activeStatus].description}
+            {textOnly && activeStatus === "paused"
+              ? "기존 문의나 예약은 업체에 직접 확인해 주세요."
+              : intakeStatusCopy[activeStatus].description}
           </p>
           {activeStatus === "paused" && (preview || onLookup) && (
             <button className={styles.primary} onClick={lookup}>
@@ -284,7 +304,15 @@ export default function CustomerIntake({
               다시 불러오기
             </button>
           )}
-          <Link href="/">개발 홈으로 돌아가기</Link>
+          {textOnly ? (
+            business.phone && (
+              <a href={`tel:${business.phone.replace(/[^0-9+]/g, "")}`}>
+                업체에 전화하기
+              </a>
+            )
+          ) : (
+            <Link href="/">개발 홈으로 돌아가기</Link>
+          )}
         </section>
       ) : (
         <>
@@ -299,7 +327,9 @@ export default function CustomerIntake({
                       말썽인가요?
                     </h2>
                     <p>
-                      사진과 설명을 남겨주시면 덕구가 필요한 내용을 물어볼게요.
+                      {textOnly
+                        ? "어떤 문제가 있는지 글로 남겨 주세요."
+                        : "사진과 설명을 남겨주시면 덕구가 필요한 내용을 물어볼게요."}
                     </p>
                   </div>
                   <div className={styles.mascot}>
@@ -318,7 +348,7 @@ export default function CustomerIntake({
                     />
                   </div>
                 </div>
-                <Progress current={1} />
+                {!textOnly && <Progress current={1} />}
                 <div className={styles.businessInfo}>
                   <p>{business.guidance}</p>
                   <p>
@@ -355,15 +385,21 @@ export default function CustomerIntake({
                   >
                     수집 항목·이용 목적·보관 기간 보기
                   </button>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={photo}
-                      onChange={(e) => setPhoto(e.target.checked)}
-                    />
-                    <span>사진 수집·분석 동의 (선택)</span>
-                  </label>
-                  <p className={styles.hint}>사진 없이도 문의할 수 있어요.</p>
+                  {!textOnly && (
+                    <>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={photo}
+                          onChange={(e) => setPhoto(e.target.checked)}
+                        />
+                        <span>사진 수집·분석 동의 (선택)</span>
+                      </label>
+                      <p className={styles.hint}>
+                        사진 없이도 문의할 수 있어요.
+                      </p>
+                    </>
+                  )}
                   {consentError && (
                     <p id="consent-error" className={styles.error} role="alert">
                       {consentError}
@@ -380,24 +416,41 @@ export default function CustomerIntake({
 
             {step === "terms" && (
               <div className={styles.terms}>
-                <h2>상담·예약에 필요한 정보를 확인하세요.</h2>
+                <h2>
+                  {textOnly
+                    ? "개인정보 수집·이용 동의"
+                    : "상담·예약에 필요한 정보를 확인하세요."}
+                </h2>
                 <p>
-                  필수 동의 후에 상담이 시작돼요. 사진은 별도로 동의한 경우
-                  수집해요.
+                  {textOnly
+                    ? "필수 동의 후에 글로 상담을 시작할 수 있어요."
+                    : "필수 동의 후에 상담이 시작돼요. 사진은 별도로 동의한 경우 수집해요."}
                 </p>
                 <dl>
                   <dt>수집 항목</dt>
                   <dd>
-                    상담 내용·이름·연락처·방문 주소, 별도 동의한 첨부 사진
+                    {textOnly
+                      ? "고객이 입력한 상담 내용"
+                      : "상담 내용·이름·연락처·방문 주소, 별도 동의한 첨부 사진"}
                   </dd>
                   <dt>이용 목적</dt>
-                  <dd>문의 접수·상담·방문 예약 및 업무 안내</dd>
+                  <dd>
+                    {textOnly
+                      ? "문의 접수·상담"
+                      : "문의 접수·상담·방문 예약 및 업무 안내"}
+                  </dd>
                   <dt>보관·삭제 기준</dt>
                   <dd>
-                    상담·사진: 종료 후 30일
+                    {textOnly
+                      ? "상담: 종료 후 30일"
+                      : "상담·사진: 종료 후 30일"}
                     <br />
-                    예약·정리된 정보: 종료 후 90일
-                    <br />
+                    {!textOnly && (
+                      <>
+                        예약·정리된 정보: 종료 후 90일
+                        <br />
+                      </>
+                    )}
                     미예약 문의: 마지막 활동 후 30일
                     <br />
                     접근 기록: 365일
@@ -491,7 +544,7 @@ export default function CustomerIntake({
                     {field("accessNote", "추가 요청", {
                       optional: true,
                       placeholder: "주차·출입 안내를 적어주세요.",
-                      maxLength: 500,
+                      maxLength: visitAccessNoteMaxLength,
                     })}
                   </fieldset>
                 </form>
@@ -609,7 +662,7 @@ export default function CustomerIntake({
   );
 }
 
-function Progress({ current }: { current: 1 | 2 }) {
+export function Progress({ current }: { current: 1 | 2 }) {
   return (
     <ol className={styles.progress} aria-label="접수 단계">
       {["사진·증상", "방문 정보", "방문시간"].map((label, i) => (

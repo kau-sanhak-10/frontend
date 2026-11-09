@@ -6,6 +6,8 @@ import {
   validateWorkTypes,
   validateServiceAreas,
   missingAutoBookingSetup,
+  isSettingsSectionDirty,
+  refreshSettingsDraft,
 } from "../src/lib/owner-settings.ts";
 import {
   getBusiness,
@@ -160,6 +162,52 @@ test("자동 예약의 필수 설정은 저장된 정보로 확인하고 접수 
       serviceAreas: [{ regionCode: "12345", regionName: "예시" }],
     }),
     [],
+  );
+});
+test("대표 연락처는 구분자를 빼고 서버와 같은 번호 형식을 검사한다", () => {
+  for (const contactPhone of ["0-------", "02-1234", "1234-5678"])
+    assert.ok(validateBusiness({ ...business, contactPhone }).contactPhone);
+  for (const contactPhone of [
+    null,
+    "010-1234-5678",
+    "02-123-4567",
+    "1588-1234",
+  ])
+    assert.deepEqual(validateBusiness({ ...business, contactPhone }), {});
+});
+test("저장 응답은 수정하지 않은 설정에 반영하고 다른 미저장 입력은 남긴다", () => {
+  const previous = {
+    business,
+    booking,
+    workTypes,
+    serviceAreas: [],
+    intakePaused: false,
+  };
+  const draft = {
+    ...previous,
+    business: { ...business, businessName: "내 입력" },
+    workTypes: [{ ...workTypes[0], durationMinutes: 90 }],
+    intakePaused: true,
+  };
+  const saved = {
+    ...previous,
+    business: { ...business, businessName: "서버 저장값" },
+    booking: { ...booking, bufferMinutes: 20, autoBookingEnabled: true },
+    serviceAreas: [{ regionCode: "12345", regionName: "서버 방문지역" }],
+  };
+  const refreshed = refreshSettingsDraft("business", draft, previous, saved);
+  assert.deepEqual(refreshed, {
+    ...saved,
+    workTypes: draft.workTypes,
+    intakePaused: true,
+  });
+  assert.equal(isSettingsSectionDirty("hours", refreshed, saved), false);
+  assert.equal(isSettingsSectionDirty("work", refreshed, saved), true);
+
+  const hours = { ...draft, booking: { ...booking, bufferMinutes: 35 } };
+  assert.deepEqual(
+    refreshSettingsDraft("business", hours, previous, saved).booking,
+    { ...saved.booking, bufferMinutes: 35 },
   );
 });
 test("설정 저장은 own 토큰 헤더와 정확한 DTO만 보내며 상태 변경을 분리한다", async () => {

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import SettingsForm from "../settings/settings-form";
 import {
+  missingAutoBookingSetup,
   workCategories,
   type SettingsData,
   type WorkCategory,
@@ -86,7 +87,7 @@ export default function SettingsPreview() {
             );
           }
           const previous = saved.current;
-          saved.current =
+          const next =
             section === "business"
               ? { ...previous, business: draft.business }
               : section === "regions"
@@ -109,7 +110,15 @@ export default function SettingsPreview() {
                           autoBookingEnabled: draft.booking.autoBookingEnabled,
                         },
                       };
-          return saved.current;
+          if (
+            next.booking.autoBookingEnabled &&
+            missingAutoBookingSetup(next).length
+          )
+            throw new Error(
+              "자동 예약의 필수 설정이에요. 자동 예약을 끈 뒤 변경해 주세요.",
+            );
+          saved.current = next;
+          return next;
         }}
       />
     </>
