@@ -234,7 +234,7 @@ test("상세 항목의 출처·미확인 이유·근거·이력을 그대로 옮
   assert.equal(byKey.symptom.history[0].value, "온수가 안 나와요");
 
   // 참고 항목 미확인은 표시만 (확인 필요로 보내지 않음)
-  assert.deepEqual(d.unconfirmedLabels, ["모델명", "보일러 종류"]);
+  assert.deepEqual(d.unconfirmedLabels, ["본체 모델명", "보일러 종류"]);
   assert.equal(needsOwnerCheck(d), false);
 
   assert.equal(d.reservation.address, "화정동 ○○아파트");
@@ -254,6 +254,38 @@ test("예약 전에도 고객이 저장한 방문 주소를 유지한다", () =>
   assert.equal(
     mapDetail(waiting, messages).visitAddress,
     "화정동 ○○아파트 101동",
+  );
+});
+
+test("조절기와 본체 모델을 별도 사진 근거로 표시한다", () => {
+  const data = mapDetail(
+    {
+      ...detail,
+      fields: [
+        field({
+          fieldKey: "model",
+          value: "NCB-500",
+          source: "PHOTO",
+          status: "CONFIRMED",
+          photoId: 7,
+        }),
+        field({
+          fieldKey: "controller_model",
+          value: "CTRL-1",
+          source: "PHOTO",
+          status: "CONFIRMED",
+          photoId: 8,
+        }),
+      ],
+    },
+    messages,
+  );
+  assert.deepEqual(
+    data.summary.map((row) => [row.label, row.value, row.evidence?.photoId]),
+    [
+      ["본체 모델명", "NCB-500", "7"],
+      ["조절기 모델명", "CTRL-1", "8"],
+    ],
   );
 });
 

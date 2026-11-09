@@ -117,6 +117,7 @@ export function displayValue(field: SummaryField): string {
 const PRODUCT_KEYS: SummaryField["key"][] = [
   "manufacturer",
   "model",
+  "controllerModel",
   "boilerType",
   "errorCode",
   "expectedCause",

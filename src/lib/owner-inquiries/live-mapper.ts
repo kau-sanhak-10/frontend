@@ -133,7 +133,8 @@ const WORK_LABEL: Record<ServerWorkCategory, string> = {
 /** 서버 항목 이름 → 화면 항목 이름. 모르는 항목은 화면에 보이지 않습니다. */
 const FIELD_KEY: Record<string, { key: SummaryField["key"]; label: string }> = {
   manufacturer: { key: "manufacturer", label: "제조사" },
-  model: { key: "model", label: "모델명" },
+  model: { key: "model", label: "본체 모델명" },
+  controller_model: { key: "controllerModel", label: "조절기 모델명" },
   boiler_type: { key: "boilerType", label: "보일러 종류" },
   error_code: { key: "errorCode", label: "오류코드" },
   symptom: { key: "symptom", label: "증상" },

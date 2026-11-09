@@ -44,6 +44,7 @@ export type SummaryField = {
   key:
     | "manufacturer"
     | "model"
+    | "controllerModel"
     | "boilerType"
     | "errorCode"
     | "symptom"
