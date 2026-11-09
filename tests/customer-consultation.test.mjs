@@ -132,6 +132,51 @@ test("사진 업로드 완료 응답이 끊겨도 같은 티켓으로 완료만 
   assert.deepEqual(calls[2], calls[3]);
 });
 
+test("서버가 파일이 없다고 확인하면 같은 티켓으로 사진을 다시 올린다", async () => {
+  process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
+  const calls = [];
+  const fetchMock = mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push([url.pathname, options.method]);
+    if (options.method === "PUT") return new Response(null, { status: 200 });
+    if (url.pathname.endsWith("/photos")) {
+      return Response.json({
+        success: true,
+        code: "OK",
+        message: "OK",
+        result: {
+          photoId: 12,
+          method: "PUT",
+          uploadUrl: "https://demo.s3.ap-northeast-2.amazonaws.com/test.png",
+          headers: { "content-type": "image/png" },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+      });
+    }
+    return calls.filter(([, method]) => method === "PUT").length === 1
+      ? Response.json(
+          {
+            success: false,
+            code: "PHOTO_NOT_UPLOADED",
+            message: "아직 사진이 올라가지 않았어요",
+            result: null,
+          },
+          { status: 409 },
+        )
+      : Response.json({
+          success: true,
+          code: "OK",
+          message: "OK",
+          result: { photoId: 12, uploadStatus: "DONE" },
+        });
+  });
+  const upload = createCustomerPhotoUploader(1, "inq_test");
+  const file = new File(["test"], "photo.png", { type: "image/png" });
+  await assert.rejects(upload(file), { code: "PHOTO_NOT_UPLOADED" });
+  assert.deepEqual(await upload(file), { photoId: 12 });
+  assert.equal(fetchMock.mock.callCount(), 5);
+  assert.deepEqual(calls.slice(1, 3), calls.slice(3));
+});
+
 test("고객 사진 단독 메시지는 조회에서 빠지지 않는다", async () => {
   process.env.NEXT_PUBLIC_API_BASE_URL = "https://dev-api.illo.ai.kr";
   mock.method(globalThis, "fetch", async () =>

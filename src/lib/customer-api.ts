@@ -1,4 +1,4 @@
-import { requestApi } from "./api.ts";
+import { ApiError, requestApi } from "./api.ts";
 import { validatePhoto } from "./customer-consultation.ts";
 import type {
   CustomerMessage,
@@ -257,6 +257,15 @@ export function createCustomerPhotoUploader(inquiryId: number, token: string) {
       method: "POST",
       headers,
       signal: AbortSignal.timeout(30_000),
+    }).catch((error: unknown) => {
+      if (
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.code === "PHOTO_NOT_UPLOADED"
+      ) {
+        ticket.transferred = false;
+      }
+      throw error;
     });
     if (complete?.photoId !== ticket.photoId)
       throw new Error("Invalid photo upload result");
