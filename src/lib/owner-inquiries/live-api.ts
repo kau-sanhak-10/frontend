@@ -161,7 +161,7 @@ export async function updateInquiryFieldsLive(
   request: { version: number; changes: FieldChange[] },
 ): Promise<SaveResult<InquiryDetail>> {
   try {
-    await requestApi<ServerDetail>(
+    const saved = await requestApi<ServerDetail>(
       `/api/v1/owner/inquiries/${encodeURIComponent(inquiryId)}`,
       {
         method: "PATCH",
@@ -175,6 +175,8 @@ export async function updateInquiryFieldsLive(
         }),
       },
     );
+    // 수정 화면은 저장 응답의 값과 버전을 씁니다. 상세 화면은 열 때 대화·사진을 조회합니다.
+    return { ok: true, data: mapDetail(saved, []) };
   } catch (error) {
     if (error instanceof ApiError) {
       if (error.code === "INQUIRY_VERSION_CONFLICT" || error.status === 409) {
@@ -187,7 +189,4 @@ export async function updateInquiryFieldsLive(
     }
     return { ok: false, code: "SAVE_FAILED" };
   }
-  // 저장은 됐으니, 화면에 보일 최신 상세(대화 포함)를 다시 불러옵니다.
-  const fresh = await fetchInquiryDetailLive(token, inquiryId);
-  return fresh.ok ? fresh : { ok: false, code: "CONFLICT" };
 }
