@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { ApiError } from "@/lib/api";
 import {
   createClientId,
   consultationError,
@@ -33,9 +34,11 @@ type Props = {
   handler?: "AI" | "OWNER";
   canContinue?: boolean;
   textOnly?: boolean;
+  photosEnabled?: boolean;
   liveNotice?: string;
   onSend?: (input: SendCustomerInput) => Promise<void>;
   onUpload?: (file: File) => Promise<{ photoId: number }>;
+  onCancelUpload?: (file: File) => Promise<void>;
   onHandoff?: () => Promise<void>;
   onContinue?: () => void;
   onBack?: () => void;
@@ -51,9 +54,11 @@ export default function CustomerConsultation({
   handler = "AI",
   canContinue = false,
   textOnly = false,
+  photosEnabled = !textOnly,
   liveNotice,
   onSend,
   onUpload,
+  onCancelUpload,
   onHandoff,
   onContinue,
   onBack,
@@ -119,7 +124,9 @@ export default function CustomerConsultation({
     const added: Attachment[] = [];
     const failures: string[] = [];
     const persistedPhotoCount = new Set([
-      ...messages.flatMap((m) => m.photos?.map((p) => p.id) ?? []),
+      ...messages.flatMap(
+        (m) => m.photoIds ?? m.photos?.map((p) => p.id) ?? [],
+      ),
       ...uploaded.current.values(),
     ]).size;
     try {
@@ -237,15 +244,30 @@ export default function CustomerConsultation({
     }
   }
 
-  function remove(id: string) {
-    if (pending) return;
+  async function remove(id: string) {
+    if (busy.current || choosing.current) return;
     const attachment = attachments.find((a) => a.id === id);
-    if (attachment) {
+    if (!attachment) return;
+    busy.current = true;
+    setPending(true);
+    setError("");
+    try {
+      await onCancelUpload?.(attachment.file);
       URL.revokeObjectURL(attachment.url);
       urls.current.delete(attachment.url);
+      uploaded.current.delete(id);
+      setAttachments((current) => current.filter((a) => a.id !== id));
+      draftId.current = null;
+    } catch (failure) {
+      setError(
+        failure instanceof ApiError && failure.code === "PHOTO_ALREADY_ATTACHED"
+          ? "이미 보낸 사진이에요. 보내기를 다시 눌러 전송 결과를 확인해 주세요."
+          : "사진 첨부를 취소하지 못했어요. 잠시 후 다시 눌러 주세요.",
+      );
+    } finally {
+      busy.current = false;
+      setPending(false);
     }
-    setAttachments((current) => current.filter((a) => a.id !== id));
-    draftId.current = null;
   }
 
   const photoButtonDisabled = !photoConsent || !onUpload || pending;
@@ -331,6 +353,12 @@ export default function CustomerConsultation({
                   {message.content && (
                     <p className={styles.bubble}>{message.content}</p>
                   )}
+                  {!message.photos?.length &&
+                    Boolean(message.photoIds?.length) && (
+                      <p className={styles.bubble}>
+                        사진 {message.photoIds?.length}장 · 전송 완료
+                      </p>
+                    )}
                   {message.photos?.map((photo) => (
                     <figure key={photo.id} className={styles.sentPhoto}>
                       {/* eslint-disable-next-line @next/next/no-img-element -- 사용자 사진·짧은 유효기간 URL은 최적화 캐시에 저장하지 않는다. */}
@@ -369,7 +397,7 @@ export default function CustomerConsultation({
                 </button>
               </div>
             )}
-            {handler === "AI" && !textOnly && (
+            {handler === "AI" && onHandoff && (
               <button
                 type="button"
                 className={styles.quiet}
@@ -423,7 +451,7 @@ export default function CustomerConsultation({
                 {error}
               </p>
             )}
-            {!photoConsent && !textOnly && (
+            {!photoConsent && photosEnabled && (
               <p className={styles.caption}>
                 사진 전송에 동의하지 않았어요. 글로 계속 상담할 수 있어요.
               </p>
@@ -435,7 +463,7 @@ export default function CustomerConsultation({
                 void send();
               }}
             >
-              {!textOnly && (
+              {photosEnabled && (
                 <button
                   type="button"
                   className={styles.iconButton}
@@ -621,7 +649,7 @@ export function FieldList({ fields }: { fields: IntakeField[] }) {
             >
               {fieldText(field)}
             </span>
-            <small>{fieldSources[field.source]}</small>
+            {field.source && <small>{fieldSources[field.source]}</small>}
             {field.reason && <p>{field.reason}</p>}
           </dd>
         </div>

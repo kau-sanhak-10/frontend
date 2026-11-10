@@ -17,5 +17,10 @@ export default async function OwnerLoginPage({
   const { reason } = await searchParams;
   const key = typeof reason === "string" ? reason : undefined;
   const notice = key && Object.hasOwn(NOTICES, key) ? NOTICES[key] : undefined;
-  return <OwnerLoginFlow notice={notice} />;
+  return (
+    <OwnerLoginFlow
+      notice={notice}
+      preview={process.env.OWNER_AUTH_PREVIEW_ENABLED === "true"}
+    />
+  );
 }

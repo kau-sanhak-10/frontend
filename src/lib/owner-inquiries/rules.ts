@@ -1,5 +1,7 @@
 // 홈과 접수함이 같은 기준으로 건수를 세도록, 분류 규칙을 이 파일 한 곳에 둡니다.
 import type {
+  EditableFieldKey,
+  FieldChange,
   InquiryStatus,
   InquirySummary,
   OwnerCheckReason,
@@ -68,6 +70,7 @@ export const OWNER_CHECK_REASON_LABEL: Record<OwnerCheckReason, string> = {
   SAFETY: "안전 확인",
   CUSTOMER_REQUEST: "고객 상담 요청",
   SCHEDULE_CHANGE: "방문시간 변경",
+  AI_HANDOFF: "덕구 판단 확인",
 };
 
 export const STATUS_LABEL: Record<InquiryStatus, string> = {
@@ -83,6 +86,7 @@ export const SOURCE_LABEL: Record<SummaryField["source"], string> = {
   PHOTO: "사진",
   OWNER: "사장님 확인",
   MANUAL: "매뉴얼",
+  NONE: "아직 없음",
 };
 
 /** 오늘 방문 예정 (홈 B01 '오늘 방문'). 시작 시각 순으로 정렬합니다. */
@@ -113,6 +117,8 @@ export function displayValue(field: SummaryField): string {
 const PRODUCT_KEYS: SummaryField["key"][] = [
   "manufacturer",
   "model",
+  "controllerModel",
+  "boilerType",
   "errorCode",
   "expectedCause",
 ];
@@ -126,4 +132,62 @@ export function splitSummary(fields: SummaryField[]): {
     product: fields.filter((f) => PRODUCT_KEYS.includes(f.key)),
     intake: fields.filter((f) => !PRODUCT_KEYS.includes(f.key)),
   };
+}
+
+/** 접수 정보 수정(B-14)에서 사장님이 고칠 수 있는 항목과 화면 문구 */
+export const EDITABLE_FIELDS: {
+  key: EditableFieldKey;
+  label: string;
+  placeholder: string;
+}[] = [
+  { key: "manufacturer", label: "제조사", placeholder: "예: 경동나비엔" },
+  { key: "model", label: "모델명", placeholder: "예: NCB353" },
+  { key: "errorCode", label: "오류코드", placeholder: "예: 03" },
+  { key: "symptom", label: "증상", placeholder: "예: 온수가 나오지 않아요" },
+];
+
+export const MAX_FIELD_LENGTH = 255;
+
+export type EditDraft = Record<EditableFieldKey, string>;
+
+/** 수정 화면 입력칸의 처음 값. 미확인 항목은 빈칸으로 시작합니다. */
+export function initialDraft(summary: SummaryField[]): EditDraft {
+  const valueOf = (key: EditableFieldKey) =>
+    summary.find((f) => f.key === key)?.value ?? "";
+  return {
+    manufacturer: valueOf("manufacturer"),
+    model: valueOf("model"),
+    errorCode: valueOf("errorCode"),
+    symptom: valueOf("symptom"),
+  };
+}
+
+/**
+ * 입력칸에서 실제로 바뀐 항목만 골라 저장 요청을 만듭니다.
+ * - 그대로인 항목은 보내지 않습니다. (원래 출처를 지키기 위해)
+ * - 값이 있던 항목을 비우거나 너무 길게 쓰면 저장하지 않고 이유를 알려 줍니다.
+ * - 미확인 항목은 비워 둬도 됩니다. (10/26 기준: 확인·수정을 강제하지 않음)
+ */
+export function collectChanges(
+  summary: SummaryField[],
+  draft: EditDraft,
+): {
+  changes: FieldChange[];
+  errors: Partial<Record<EditableFieldKey, string>>;
+} {
+  const before = initialDraft(summary);
+  const changes: FieldChange[] = [];
+  const errors: Partial<Record<EditableFieldKey, string>> = {};
+  for (const { key } of EDITABLE_FIELDS) {
+    const value = draft[key].trim();
+    if (value === before[key].trim()) continue;
+    if (value === "") {
+      errors[key] = "비워 둘 수 없어요. 원래 값으로 두려면 되돌려 주세요.";
+    } else if (value.length > MAX_FIELD_LENGTH) {
+      errors[key] = `${MAX_FIELD_LENGTH}자 이하로 입력해 주세요.`;
+    } else {
+      changes.push({ key, value });
+    }
+  }
+  return { changes, errors };
 }

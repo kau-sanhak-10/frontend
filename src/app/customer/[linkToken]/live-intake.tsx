@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
   createCustomerInquiry,
+  createCustomerPhotoUploader,
   getCustomerIntake,
   getCustomerMessages,
   isIntakeLinkToken,
+  isWaitingForOwner,
+  requestCustomerHandoff,
   sendCustomerMessage,
 } from "@/lib/customer-api";
 import type {
@@ -25,7 +28,9 @@ const emptyBusiness: IntakeBusiness = {
   termsVersion: "",
   workTypes: [],
 };
-type Inquiry = Awaited<ReturnType<typeof createCustomerInquiry>>;
+type Inquiry = Awaited<ReturnType<typeof createCustomerInquiry>> & {
+  photoConsent: boolean;
+};
 
 function linkStatus(error: unknown): IntakeStatus {
   if (!(error instanceof ApiError)) return "error";
@@ -38,9 +43,13 @@ function linkStatus(error: unknown): IntakeStatus {
 export default function CustomerLiveIntake({
   linkToken,
   visitDemo,
+  photoDemo,
+  photoCancel,
 }: {
   linkToken: string;
   visitDemo: boolean;
+  photoDemo: boolean;
+  photoCancel: boolean;
 }) {
   const validLink = isIntakeLinkToken(linkToken, visitDemo);
   const [status, setStatus] = useState<IntakeStatus>(
@@ -72,6 +81,8 @@ export default function CustomerLiveIntake({
         business={business}
         inquiry={inquiry}
         visitDemo={visitDemo}
+        photoDemo={photoDemo}
+        photoCancel={photoCancel}
       />
     );
   return (
@@ -80,13 +91,18 @@ export default function CustomerLiveIntake({
       status={status}
       textOnly
       visitDemo={visitDemo}
+      photosEnabled={photoDemo}
       onRetry={() => {
         setStatus("loading");
         setAttempt((value) => value + 1);
       }}
       onStart={async ({ consents }) => {
         try {
-          setInquiry(await createCustomerInquiry(linkToken, consents));
+          const created = await createCustomerInquiry(linkToken, consents);
+          setInquiry({
+            ...created,
+            photoConsent: photoDemo && consents.some((c) => c.type === "PHOTO"),
+          });
         } catch (error) {
           const status = linkStatus(error);
           if (status !== "error") setStatus(status);
@@ -101,20 +117,30 @@ function LiveConsultation({
   business,
   inquiry,
   visitDemo,
+  photoDemo,
+  photoCancel,
 }: {
   business: IntakeBusiness;
   inquiry: Inquiry;
   visitDemo: boolean;
+  photoDemo: boolean;
+  photoCancel: boolean;
 }) {
-  const { inquiryId, inquiryToken, expiresAt } = inquiry;
+  const { inquiryId, inquiryToken, expiresAt, photoConsent } = inquiry;
+  const [photoUploader] = useState(() =>
+    createCustomerPhotoUploader(inquiryId, inquiryToken),
+  );
   const [messages, setMessages] = useState<CustomerMessage[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
+  const [ownerRequested, setOwnerRequested] = useState(false);
+  const [ownerWillReview, setOwnerWillReview] = useState(false);
   const [waitingAfter, setWaitingAfter] = useState<number | null>(null);
   const [slowAfter, setSlowAfter] = useState<number | null>(null);
   const waitingForReply =
     waitingAfter !== null &&
+    !ownerWillReview &&
     !messages.some(
       (message) =>
         (message.role === "AI" || message.role === "OWNER") &&
@@ -126,6 +152,41 @@ function LiveConsultation({
     const timer = setTimeout(() => setSlowAfter(waitingAfter), 12_000);
     return () => clearTimeout(timer);
   }, [ended, waitingAfter, waitingForReply]);
+
+  useEffect(() => {
+    if (!waitingForReply || ended || slowAfter !== waitingAfter) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function checkHandoff() {
+      try {
+        const handedOff = await isWaitingForOwner(
+          inquiryId,
+          inquiryToken,
+          AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
+        );
+        if (controller.signal.aborted) return;
+        if (handedOff) {
+          setOwnerWillReview(true);
+          return;
+        }
+      } catch {
+        // 메시지 조회와 독립적이다. 잠깐 실패해도 대화나 전송은 막지 않는다.
+      }
+      if (!controller.signal.aborted) timer = setTimeout(checkHandoff, 4000);
+    }
+    void checkHandoff();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [
+    ended,
+    inquiryId,
+    inquiryToken,
+    slowAfter,
+    waitingAfter,
+    waitingForReply,
+  ]);
 
   function addMessages(newMessages: CustomerMessage[]) {
     if (!newMessages.length) return;
@@ -188,8 +249,14 @@ function LiveConsultation({
       input,
     );
     addMessages([
-      { id: String(messageId), role: "CUSTOMER", content: input.content },
+      {
+        id: String(messageId),
+        role: "CUSTOMER",
+        content: input.content,
+        photoIds: input.photoIds,
+      },
     ]);
+    if (aiStatus === "PROCESSING") setOwnerWillReview(false);
     setWaitingAfter(aiStatus === "PROCESSING" ? messageId : null);
   }
 
@@ -207,7 +274,9 @@ function LiveConsultation({
       businessName={business.name}
       messages={messages}
       fields={[]}
-      photoConsent={false}
+      handler={ownerRequested || ownerWillReview ? "OWNER" : "AI"}
+      photoConsent={photoConsent}
+      photosEnabled={photoDemo}
       textOnly
       canContinue={
         visitDemo &&
@@ -218,15 +287,32 @@ function LiveConsultation({
       liveNotice={
         ended
           ? "이 상담에 더 이상 접근할 수 없어요. 업체에 문의해 주세요."
-          : loadFailed
-            ? "새 답변을 불러오지 못했어요. 연결되면 다시 확인할게요."
-            : waitingForReply
-              ? slowAfter === waitingAfter
-                ? "보낸 내용은 저장됐어요. 아직 답변이 도착하지 않았어요."
-                : "메시지를 보냈어요. 답변을 기다리고 있어요."
-              : undefined
+          : ownerRequested
+            ? "사장님에게 직접 상담 요청을 전달했어요."
+            : ownerWillReview
+              ? "보낸 내용은 저장됐어요. 사장님이 확인할 예정이에요."
+              : loadFailed
+                ? "새 답변을 불러오지 못했어요. 연결되면 다시 확인할게요."
+                : waitingForReply
+                  ? slowAfter === waitingAfter
+                    ? "보낸 내용은 저장됐어요. 아직 답변이 도착하지 않았어요."
+                    : "메시지를 보냈어요. 답변을 기다리고 있어요."
+                  : undefined
       }
       onSend={ended ? undefined : send}
+      onHandoff={
+        ended || ownerWillReview
+          ? undefined
+          : async () => {
+              await requestCustomerHandoff(inquiryId, inquiryToken);
+              setOwnerRequested(true);
+              setWaitingAfter(null);
+            }
+      }
+      onUpload={!ended && photoConsent ? photoUploader.upload : undefined}
+      onCancelUpload={
+        photoConsent && photoCancel ? photoUploader.cancel : undefined
+      }
     />
   );
 }

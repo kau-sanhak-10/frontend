@@ -16,7 +16,7 @@ export type IntakeField = {
   key: string;
   label: string;
   value: string | null;
-  source: "CUSTOMER" | "PHOTO" | "OWNER" | "MANUAL";
+  source?: "CUSTOMER" | "PHOTO" | "OWNER" | "MANUAL";
   status: "CONFIRMED" | "UNCONFIRMED" | "CONFLICT";
   reason?: string;
 };
@@ -25,6 +25,7 @@ export type CustomerMessage = {
   id: string;
   role: "CUSTOMER" | "AI" | "OWNER" | "SYSTEM";
   content: string;
+  photoIds?: number[];
   photos?: { id: number; url: string; name: string }[];
 };
 
