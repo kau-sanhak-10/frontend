@@ -6,8 +6,11 @@ import {
   mapDetail,
   mapIntakeLink,
   mapListItem,
+  mapMessage,
   mergeTodayVisits,
+  type ServerClose,
   type ServerDetail,
+  type ServerHandlerChange,
   type ServerHome,
   type ServerIntakeLink,
   type ServerListPage,
@@ -16,10 +19,14 @@ import {
 } from "./live-mapper.ts";
 import type {
   FieldChange,
+  Handler,
+  HandlingResult,
   InquiryDetail,
+  InquiryMessage,
   InquirySummary,
   IntakeLink,
   LoadResult,
+  ResumeBlocker,
   SaveResult,
 } from "./types";
 
@@ -188,5 +195,126 @@ export async function updateInquiryFieldsLive(
       }
     }
     return { ok: false, code: "SAVE_FAILED" };
+  }
+}
+
+// ── 직접 응대·답장·덕구 재개·문의 종료 (FE-10 · BE-08) ─────────────
+// 서버 형식 출처: backend OwnerHandlingController (develop, 11/10 기준)
+
+const BLOCKERS: ResumeBlocker[] = ["SAFETY", "REQUIRED_FIELD"];
+
+/** 서버가 AI_RESUME_BLOCKED와 함께 준 이유 ({ reasons: [...] }) 중 아는 것만 */
+function blockersOf(result: unknown): ResumeBlocker[] {
+  if (!result || typeof result !== "object" || !("reasons" in result)) {
+    return [];
+  }
+  const reasons = (result as { reasons: unknown }).reasons;
+  return Array.isArray(reasons)
+    ? BLOCKERS.filter((b) => reasons.includes(b))
+    : [];
+}
+
+/** 실패 이유 나누기. 모르는 실패는 모두 '다시 시도'로 봅니다. */
+function handlingFailure(error: unknown): {
+  ok: false;
+  code: "FAILED" | "CLOSED" | "NOT_OWNER_MODE" | "RESUME_BLOCKED" | "NOT_FOUND";
+  blockers?: ResumeBlocker[];
+} {
+  if (error instanceof ApiError) {
+    if (error.code === "INQUIRY_CLOSED") return { ok: false, code: "CLOSED" };
+    if (error.code === "NOT_IN_OWNER_MODE") {
+      return { ok: false, code: "NOT_OWNER_MODE" };
+    }
+    if (error.code === "AI_RESUME_BLOCKED") {
+      return {
+        ok: false,
+        code: "RESUME_BLOCKED",
+        blockers: blockersOf(error.result),
+      };
+    }
+    if (error.status === 404) return { ok: false, code: "NOT_FOUND" };
+  }
+  return { ok: false, code: "FAILED" };
+}
+
+const inquiryPath = (inquiryId: string, action: string) =>
+  `/api/v1/owner/inquiries/${encodeURIComponent(inquiryId)}/${action}`;
+
+/** 직접 응대 시작 (B-15). 서버가 응대 주체를 바꾼 뒤에만 성공을 돌려줍니다. */
+export async function takeOverInquiryLive(
+  token: string,
+  inquiryId: string,
+): Promise<HandlingResult<{ handler: Handler }>> {
+  try {
+    const res = await requestApi<ServerHandlerChange>(
+      inquiryPath(inquiryId, "takeover"),
+      { method: "POST", headers: auth(token) },
+    );
+    return { ok: true, data: { handler: res.handlerMode } };
+  } catch (error) {
+    return handlingFailure(error);
+  }
+}
+
+/**
+ * 사장님 답장 (B-15). clientMsgId는 화면이 만든 값입니다.
+ * 실패 후 같은 clientMsgId로 다시 보내면 서버가 중복 저장하지 않습니다.
+ */
+export async function sendOwnerMessageLive(
+  token: string,
+  inquiryId: string,
+  request: { clientMsgId: string; text: string },
+): Promise<HandlingResult<InquiryMessage>> {
+  try {
+    const res = await requestApi<ServerMessage>(
+      inquiryPath(inquiryId, "messages"),
+      {
+        method: "POST",
+        headers: auth(token),
+        body: JSON.stringify({
+          clientMsgId: request.clientMsgId,
+          content: request.text,
+        }),
+      },
+    );
+    const message = mapMessage(res);
+    // 서버가 저장하지 못했다고 하면 보낸 것처럼 보이지 않게 실패로 둡니다. (C-11)
+    return message.delivery === "FAILED"
+      ? { ok: false, code: "FAILED" }
+      : { ok: true, data: message };
+  } catch (error) {
+    return handlingFailure(error);
+  }
+}
+
+/** 덕구에게 다시 맡기기 (B-16). 안전·필수정보가 남으면 서버가 422로 막습니다. */
+export async function resumeAiInquiryLive(
+  token: string,
+  inquiryId: string,
+): Promise<HandlingResult<{ handler: Handler }>> {
+  try {
+    const res = await requestApi<ServerHandlerChange>(
+      inquiryPath(inquiryId, "resume-ai"),
+      { method: "POST", headers: auth(token) },
+    );
+    return { ok: true, data: { handler: res.handlerMode } };
+  } catch (error) {
+    return handlingFailure(error);
+  }
+}
+
+/** 문의 종료 (B-16). 예약은 취소되지 않습니다. */
+export async function closeInquiryLive(
+  token: string,
+  inquiryId: string,
+): Promise<HandlingResult<{ reservationKept: boolean }>> {
+  try {
+    const res = await requestApi<ServerClose>(inquiryPath(inquiryId, "close"), {
+      method: "POST",
+      headers: auth(token),
+    });
+    return { ok: true, data: { reservationKept: res.reservationKept } };
+  } catch (error) {
+    return handlingFailure(error);
   }
 }

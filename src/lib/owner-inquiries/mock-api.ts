@@ -8,13 +8,17 @@
 import type {
   EditableFieldKey,
   FieldChange,
+  Handler,
+  HandlingResult,
   InquiryDetail,
+  InquiryMessage,
   InquirySummary,
   IntakeLink,
   LoadResult,
   SaveResult,
   SummaryField,
 } from "./types";
+import { resumeBlockersOf } from "./rules.ts";
 
 /**
  * 개발 화면 확인용 스위치. 주소 뒤에 붙이면 그 상태를 바로 볼 수 있습니다.
@@ -26,6 +30,8 @@ import type {
  * - ?mock=photos : 여러 첨부 사진 조회 (같은 예시 자산을 두 번 사용)
  * - ?mock=savefail : 접수 정보 저장 실패 (B-14)
  * - ?mock=conflict : 다른 곳에서 먼저 바뀌어 저장이 거절됨 (B-14)
+ * - ?mock=handlingfail : 직접 응대·덕구 재개·문의 종료가 실패 (B-15·B-16)
+ * - ?mock=sendfail : 사장님 답장 전송 실패 (B-15)
  * 개발 서버(npm run dev)에서만 동작하고 배포 화면에서는 무시합니다.
  */
 export type DevMockMode =
@@ -36,7 +42,9 @@ export type DevMockMode =
   | "summaryfail"
   | "photos"
   | "savefail"
-  | "conflict";
+  | "conflict"
+  | "handlingfail"
+  | "sendfail";
 
 function devMockMode(): DevMockMode | null {
   if (process.env.NODE_ENV === "production") return null;
@@ -49,7 +57,9 @@ function devMockMode(): DevMockMode | null {
     mode === "summaryfail" ||
     mode === "photos" ||
     mode === "savefail" ||
-    mode === "conflict"
+    mode === "conflict" ||
+    mode === "handlingfail" ||
+    mode === "sendfail"
     ? mode
     : null;
 }
@@ -61,6 +71,10 @@ export const mockInquiryConfig = {
   fail: false,
   /** true면 저장이 실패합니다. 저장 실패 안내 확인용입니다. */
   saveFail: false,
+  /** true면 직접 응대·재개·종료가 실패합니다. 전환 실패 안내 확인용입니다. */
+  handlingFail: false,
+  /** true면 답장 전송이 실패합니다. 전송 실패 표시 확인용입니다. */
+  sendFail: false,
   now: () => Date.now(),
 };
 
@@ -85,13 +99,25 @@ function todayAt(h: number, m = 0) {
   return d.getTime();
 }
 
+type BaseInquiry = Omit<
+  InquiryDetail,
+  "version" | "handler" | "closed" | "safetyFlag"
+>;
+
 function buildInquiries(): InquiryDetail[] {
   return baseInquiries().map((inquiry) =>
-    applySavedEdit({ ...inquiry, version: 1 }),
+    applyMockState({
+      ...inquiry,
+      version: 1,
+      // 목업 예시는 상태에서 응대 주체를 정합니다. 실제로는 서버가 handlerMode를 줍니다.
+      handler: inquiry.status === "OWNER_HANDLING" ? "OWNER" : "AI",
+      closed: inquiry.status === "COMPLETED",
+      safetyFlag: inquiry.ownerCheckReason === "SAFETY",
+    }),
   );
 }
 
-function baseInquiries(): Omit<InquiryDetail, "version">[] {
+function baseInquiries(): BaseInquiry[] {
   const now = mockInquiryConfig.now();
   return [
     {
@@ -340,6 +366,7 @@ function baseInquiries(): Omit<InquiryDetail, "version">[] {
       ownerCheckReason: "CUSTOMER_REQUEST",
       note: "고객이 사장님과 직접 통화를 원해요.",
       unconfirmedLabels: [],
+      activeHandoff: { id: "h-901", type: "DIRECT_CHAT", status: "WAITING" },
       customerDescription: "보일러에서 소리가 크게 나요.",
       summary: [field("symptom", "증상", "보일러 소음", "CUSTOMER", true)],
       summaryUpdatedAt: now - 2 * HOUR,
@@ -438,22 +465,49 @@ const FIELD_LABEL: Record<EditableFieldKey, string> = {
 
 const MAX_VALUE_LENGTH = 255;
 
-/** 문의별로 사장님이 저장한 결과 (버전 + 고친 뒤의 항목들) */
-const savedEdits = new Map<
-  string,
-  { version: number; summary: SummaryField[] }
->();
+/** 문의별로 사장님이 고친 뒤의 항목들 */
+const savedEdits = new Map<string, SummaryField[]>();
 
-function applySavedEdit(inquiry: InquiryDetail): InquiryDetail {
-  const saved = savedEdits.get(inquiry.id);
-  return saved
-    ? { ...inquiry, version: saved.version, summary: saved.summary }
-    : inquiry;
+/** 문의별 버전. 고치거나 응대를 바꿀 때마다 1씩 오릅니다. (없으면 1) */
+const versions = new Map<string, number>();
+
+/** 직접 응대·재개·종료로 바뀐 값과 새로 생긴 메시지 */
+type HandlingPatch = Partial<
+  Pick<
+    InquiryDetail,
+    | "handler"
+    | "status"
+    | "closed"
+    | "ownerCheckReason"
+    | "activeHandoff"
+    | "note"
+  >
+> & { messages?: InquiryMessage[] };
+
+const handlingPatches = new Map<string, HandlingPatch>();
+
+function applyMockState(inquiry: InquiryDetail): InquiryDetail {
+  const summary = savedEdits.get(inquiry.id) ?? inquiry.summary;
+  const { messages: extra = [], ...patch } =
+    handlingPatches.get(inquiry.id) ?? {};
+  return {
+    ...inquiry,
+    ...patch,
+    summary,
+    messages: [...inquiry.messages, ...extra],
+    version: versions.get(inquiry.id) ?? 1,
+  };
+}
+
+function bumpVersion(inquiryId: string, current: number) {
+  versions.set(inquiryId, current + 1);
 }
 
 /** 테스트끼리 저장 결과가 섞이지 않게 비웁니다. */
 export function resetMockEdits() {
   savedEdits.clear();
+  versions.clear();
+  handlingPatches.clear();
 }
 
 /**
@@ -516,11 +570,169 @@ export async function updateInquiryFields(
     before.evidence = undefined;
   });
 
-  savedEdits.set(inquiryId, { version: current.version + 1, summary });
+  savedEdits.set(inquiryId, summary);
+  bumpVersion(inquiryId, current.version);
   return {
     ok: true,
     data: { ...current, version: current.version + 1, summary },
   };
+}
+
+// ── 직접 응대·답장·덕구 재개·문의 종료 (FE-10 · B-15·B-16) ─────────────
+// 실제 API: POST /api/v1/owner/inquiries/{id}/takeover · messages · resume-ai · close
+// 목업도 서버 규칙을 따릅니다. (backend OwnerHandlingService, 11/10 기준)
+
+function findOwned(businessId: string, inquiryId: string) {
+  return buildInquiries().find(
+    (i) => i.id === inquiryId && i.businessId === businessId,
+  );
+}
+
+function patchHandling(inquiryId: string, patch: HandlingPatch) {
+  const before = handlingPatches.get(inquiryId) ?? {};
+  handlingPatches.set(inquiryId, {
+    ...before,
+    ...patch,
+    messages: [...(before.messages ?? []), ...(patch.messages ?? [])],
+  });
+}
+
+function handlingFails() {
+  return mockInquiryConfig.handlingFail || devMockMode() === "handlingfail";
+}
+
+/**
+ * 직접 응대 시작 (B-15). 덕구 답변·자동 예약이 멈춥니다.
+ * 서버처럼 진행 단계는 그대로 두고 응대 주체만 바꿉니다. 이미 직접 응대 중이면 그대로 성공입니다.
+ */
+export async function takeOverInquiry(
+  businessId: string,
+  inquiryId: string,
+): Promise<HandlingResult<{ handler: Handler }>> {
+  await wait();
+  if (handlingFails()) return { ok: false, code: "FAILED" };
+  const current = findOwned(businessId, inquiryId);
+  if (!current) return { ok: false, code: "NOT_FOUND" };
+  if (current.closed) return { ok: false, code: "CLOSED" };
+  if (current.handler === "OWNER")
+    return { ok: true, data: { handler: "OWNER" } };
+
+  const handoff = current.activeHandoff;
+  patchHandling(inquiryId, {
+    handler: "OWNER",
+    status: current.status === "AI_INTAKE" ? "OWNER_HANDLING" : current.status,
+    activeHandoff:
+      handoff?.type === "DIRECT_CHAT" && handoff.status === "WAITING"
+        ? { ...handoff, status: "IN_PROGRESS" }
+        : handoff,
+  });
+  bumpVersion(inquiryId, current.version);
+  return { ok: true, data: { handler: "OWNER" } };
+}
+
+/**
+ * 사장님 답장 (B-15). 직접 응대 중일 때만 보낼 수 있습니다.
+ * 같은 clientMsgId로 다시 보내면 새로 만들지 않고 처음 저장한 메시지를 돌려줍니다. (중복 방지)
+ */
+export async function sendOwnerMessage(
+  businessId: string,
+  inquiryId: string,
+  request: { clientMsgId: string; text: string },
+): Promise<HandlingResult<InquiryMessage>> {
+  await wait();
+  if (mockInquiryConfig.sendFail || devMockMode() === "sendfail") {
+    return { ok: false, code: "FAILED" };
+  }
+  const current = findOwned(businessId, inquiryId);
+  if (!current) return { ok: false, code: "NOT_FOUND" };
+  const id = `owner-${request.clientMsgId}`;
+  const sent = current.messages.find((m) => m.id === id);
+  if (sent) return { ok: true, data: sent };
+  if (current.closed) return { ok: false, code: "CLOSED" };
+  if (current.handler !== "OWNER") return { ok: false, code: "NOT_OWNER_MODE" };
+  const text = request.text.trim();
+  if (!text || text.length > 2000) return { ok: false, code: "FAILED" };
+
+  const message: InquiryMessage = {
+    id,
+    from: "OWNER",
+    text,
+    sentAt: mockInquiryConfig.now(),
+    delivery: "SENT",
+  };
+  patchHandling(inquiryId, { messages: [message] });
+  return { ok: true, data: message };
+}
+
+/**
+ * 덕구에게 다시 맡기기 (B-16).
+ * 안전 신호가 있거나 필수 정보(증상)가 확인되지 않았으면 막고 이유를 돌려줍니다.
+ */
+export async function resumeAiInquiry(
+  businessId: string,
+  inquiryId: string,
+): Promise<HandlingResult<{ handler: Handler }>> {
+  await wait();
+  if (handlingFails()) return { ok: false, code: "FAILED" };
+  const current = findOwned(businessId, inquiryId);
+  if (!current) return { ok: false, code: "NOT_FOUND" };
+  if (current.closed) return { ok: false, code: "CLOSED" };
+  const waitingOwner = current.status === "OWNER_CHECK";
+  if (current.handler === "AI" && !waitingOwner) {
+    return { ok: true, data: { handler: "AI" } };
+  }
+  const blockers = resumeBlockersOf(current);
+  if (blockers.length) return { ok: false, code: "RESUME_BLOCKED", blockers };
+
+  const handoff = current.activeHandoff;
+  const backToIntake =
+    current.status === "OWNER_CHECK" || current.status === "OWNER_HANDLING";
+  patchHandling(inquiryId, {
+    handler: "AI",
+    status: backToIntake ? "AI_INTAKE" : current.status,
+    ownerCheckReason: backToIntake ? undefined : current.ownerCheckReason,
+    note: backToIntake ? "덕구가 이어서 접수하고 있어요." : current.note,
+    // 직접 상담 요청은 끝냅니다. 전화 회신 요청은 남깁니다. (서버와 같음)
+    activeHandoff: handoff?.type === "DIRECT_CHAT" ? undefined : handoff,
+    // 고객에게 전환 사실을 알립니다. (C-11) 실제로는 서버·AI가 보냅니다.
+    messages: [
+      {
+        id: `dukgu-resume-${current.version}`,
+        from: "DUKGU",
+        text: "사장님 확인을 마쳤어요. 이어서 덕구가 도와드릴게요.",
+        sentAt: mockInquiryConfig.now(),
+      },
+    ],
+  });
+  bumpVersion(inquiryId, current.version);
+  return { ok: true, data: { handler: "AI" } };
+}
+
+/**
+ * 문의 종료 (B-16). 덕구 응대를 멈추고 기록은 남깁니다.
+ * 연결된 예약은 취소하지 않습니다. 예약이 남았는지 reservationKept로 알려 줍니다.
+ */
+export async function closeInquiry(
+  businessId: string,
+  inquiryId: string,
+): Promise<HandlingResult<{ reservationKept: boolean }>> {
+  await wait();
+  if (handlingFails()) return { ok: false, code: "FAILED" };
+  const current = findOwned(businessId, inquiryId);
+  if (!current) return { ok: false, code: "NOT_FOUND" };
+  if (!current.closed) {
+    patchHandling(inquiryId, {
+      status: "COMPLETED",
+      closed: true,
+      ownerCheckReason: undefined,
+      activeHandoff: undefined,
+      note: current.reservation
+        ? "문의를 종료했어요. 방문 예약은 그대로 있어요."
+        : "문의를 종료했어요.",
+    });
+    bumpVersion(inquiryId, current.version);
+  }
+  return { ok: true, data: { reservationKept: Boolean(current.reservation) } };
 }
 
 const INTAKE_LINKS: Record<string, IntakeLink> = {
