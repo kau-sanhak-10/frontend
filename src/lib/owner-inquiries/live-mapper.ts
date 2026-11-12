@@ -5,6 +5,7 @@
 import type {
   EditableFieldKey,
   FieldHistoryItem,
+  HandoffRequestInfo,
   InquiryDetail,
   InquiryMessage,
   InquiryPhoto,
@@ -102,8 +103,36 @@ export type ServerDetail = {
     nextActionReason?: string | null;
   } | null;
   photos: { photoId: number; messageId: number | null }[];
+  /** 고객의 직접 상담·전화 회신 요청 (최근 것부터) */
+  handoffRequests?: ServerHandoff[];
   reservation: { status: string; startAt: string; endAt: string } | null;
   createdAt: string;
+};
+
+/** 고객의 사람 응대 요청 (OwnerHandoffResponse) */
+export type ServerHandoff = {
+  handoffId: number;
+  requestType: "DIRECT_CHAT" | "CALLBACK";
+  name: string | null;
+  phone: string | null;
+  status: "WAITING" | "IN_PROGRESS" | "DONE";
+};
+
+/** 직접 응대 시작·덕구 재개 결과 (HandlerChangeResponse) */
+export type ServerHandlerChange = {
+  inquiryId: number;
+  handlerMode: ServerHandlerMode;
+  status: ServerInquiryStatus;
+  version: number;
+};
+
+/** 문의 종료 결과 (CloseInquiryResponse) */
+export type ServerClose = {
+  inquiryId: number;
+  status: ServerInquiryStatus;
+  version: number;
+  reservationKept: boolean;
+  reservationId: number | null;
 };
 
 export type ServerMessage = {
@@ -111,6 +140,7 @@ export type ServerMessage = {
   sender: "CUSTOMER" | "AI" | "OWNER";
   content: string | null;
   photoIds: number[];
+  deliveryStatus?: "PENDING" | "SENT" | "FAILED";
   createdAt: string;
 };
 
@@ -337,13 +367,29 @@ function mapConflict(
     : undefined;
 }
 
-function mapMessage(m: ServerMessage): InquiryMessage {
+export function mapMessage(m: ServerMessage): InquiryMessage {
   return {
     id: String(m.messageId),
     from: m.sender === "AI" ? "DUKGU" : m.sender,
     text: m.content ?? undefined,
     photoId: m.photoIds.length ? String(m.photoIds[0]) : undefined,
     sentAt: time(m.createdAt),
+    delivery: m.deliveryStatus,
+  };
+}
+
+/** 끝나지 않은 요청 중 가장 최근 것 하나 (서버는 최근 것부터 줍니다) */
+function activeHandoffOf(
+  handoffs: ServerHandoff[] | undefined,
+): HandoffRequestInfo | undefined {
+  const active = handoffs?.find((h) => h.status !== "DONE");
+  if (!active || active.status === "DONE") return undefined;
+  return {
+    id: String(active.handoffId),
+    type: active.requestType,
+    status: active.status,
+    name: active.name ?? undefined,
+    phone: active.phone ?? undefined,
   };
 }
 
@@ -411,6 +457,10 @@ export function mapDetail(
     photos,
     messages: messages.map(mapMessage),
     version: detail.version,
+    handler: detail.handlerMode,
+    closed: detail.status === "CLOSED",
+    safetyFlag: detail.safetyFlag,
+    activeHandoff: activeHandoffOf(detail.handoffRequests),
   };
 }
 

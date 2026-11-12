@@ -2,9 +2,11 @@
 import type {
   EditableFieldKey,
   FieldChange,
+  InquiryDetail,
   InquiryStatus,
   InquirySummary,
   OwnerCheckReason,
+  ResumeBlocker,
   SummaryField,
 } from "./types";
 
@@ -190,4 +192,64 @@ export function collectChanges(
     }
   }
   return { changes, errors };
+}
+
+// ── 직접 응대·덕구 재개·문의 종료 (FE-10 · B-15·B-16) ─────────────
+
+/** 답장 한 번에 보낼 수 있는 글자 수 (서버 OwnerMessageRequest와 같음) */
+export const MAX_MESSAGE_LENGTH = 2000;
+
+/** 덕구에게 다시 맡길 수 없는 이유를 사장님에게 안내하는 문장 */
+export const RESUME_BLOCKER_LABEL: Record<ResumeBlocker, string> = {
+  SAFETY: "안전 신호가 남아 있어요. 고객과 직접 안전을 확인해 주세요.",
+  REQUIRED_FIELD:
+    "필수 정보(증상)가 아직 확인되지 않았어요. 접수 정보를 먼저 확인해 주세요.",
+};
+
+/**
+ * 화면에서 미리 알 수 있는 재개 불가 이유. 버튼을 누르기 전에 안내하려고 씁니다.
+ * 최종 판단은 서버가 하며, 서버가 막으면 서버가 준 이유를 그대로 보여 줍니다.
+ */
+export function resumeBlockersOf(inquiry: InquiryDetail): ResumeBlocker[] {
+  const blockers: ResumeBlocker[] = [];
+  if (inquiry.safetyFlag) blockers.push("SAFETY");
+  if (
+    inquiry.summary.some(
+      (f) =>
+        f.required &&
+        f.key === "symptom" &&
+        (f.state === "UNCONFIRMED" || f.value === null),
+    )
+  ) {
+    blockers.push("REQUIRED_FIELD");
+  }
+  return blockers;
+}
+
+/** 지금 할 수 있는 응대 동작. 화면은 이 값만 보고 버튼을 보여 줍니다. */
+export type HandlingActions = {
+  canTakeOver: boolean;
+  canReply: boolean;
+  canResume: boolean;
+  canClose: boolean;
+};
+
+export function handlingActionsOf(inquiry: InquiryDetail): HandlingActions {
+  if (inquiry.closed) {
+    return {
+      canTakeOver: false,
+      canReply: false,
+      canResume: false,
+      canClose: false,
+    };
+  }
+  const owner = inquiry.handler === "OWNER";
+  // 덕구가 응대 중이어도 '확인 필요' 단계면 사장님이 확인을 마친 뒤 덕구에게 돌려줄 수 있어요.
+  const waitingOwner = inquiry.status === "OWNER_CHECK";
+  return {
+    canTakeOver: !owner,
+    canReply: owner,
+    canResume: owner || waitingOwner,
+    canClose: true,
+  };
 }
