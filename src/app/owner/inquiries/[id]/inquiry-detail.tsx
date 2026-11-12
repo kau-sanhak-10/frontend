@@ -114,7 +114,14 @@ function DetailContent({
           </span>
         </div>
         <p className={styles.cardTime}>
-          {formatReceivedAt(inquiry.receivedAt, now)} 접수
+          {formatReceivedAt(inquiry.receivedAt, now)} 접수 ·{" "}
+          {inquiry.closed
+            ? "종료된 문의"
+            : inquiry.handler === "OWNER"
+              ? "사장님이 직접 응대 중"
+              : inquiry.status === "OWNER_CHECK"
+                ? "덕구가 사장님 확인을 기다려요"
+                : "덕구가 응대 중"}
         </p>
       </section>
 
@@ -232,6 +239,16 @@ function DetailContent({
       ) : null}
 
       <div className={auth.footer}>
+        <Link
+          href={`/owner/inquiries/${inquiry.id}/chat`}
+          className={`${auth.button} ${auth.secondary} ${auth.full} ${styles.plainLink}`}
+        >
+          {inquiry.closed
+            ? "대화 기록 보기"
+            : inquiry.handler === "OWNER"
+              ? "고객과 대화 · 답장하기"
+              : "고객과 대화 · 직접 응대"}
+        </Link>
         <Link
           href={`/owner/inquiries/${inquiry.id}/edit`}
           className={`${auth.button} ${auth.primary} ${auth.full} ${styles.plainLink}`}

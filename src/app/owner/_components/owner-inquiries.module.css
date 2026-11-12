@@ -518,3 +518,132 @@
   outline: 3px solid #b35300;
   outline-offset: 2px;
 }
+
+/* 직접 응대·덕구 재개·문의 종료 (FE-10) */
+.handoffNote {
+  margin: 6px 0 0;
+  color: #b35300;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.handoffNote a {
+  color: inherit;
+}
+
+.ownerBubble {
+  background: #fff1dc;
+}
+
+.bubbleFailed {
+  border: 1px dashed #b60c0c;
+  opacity: 0.8;
+}
+
+.sendFailed {
+  color: #b60c0c;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.retryButton {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: #b60c0c;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.retryButton:focus-visible {
+  outline: 2px solid #b60c0c;
+  outline-offset: 1px;
+}
+
+.handling {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #e4e4e4;
+}
+
+.handlingBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 응대 전환 실패: 답장 전송 실패(.sendFailed)와 다르게 박스로 보여 줍니다. */
+.switchFailed {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fdecec;
+  color: #b60c0c;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.blockerList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 14px 12px 30px;
+  border-radius: 10px;
+  background: #fff7eb;
+  color: #b35300;
+  font-size: 0.8125rem;
+}
+
+.confirmPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid #e4e4e4;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.confirmPanel p {
+  margin: 0;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.composerInput {
+  width: 100%;
+  min-height: 84px;
+  padding: 12px 14px;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #242527;
+  font: inherit;
+  font-size: 1rem;
+  resize: vertical;
+}
+
+.composerInput:focus-visible {
+  outline: 2px solid #ff9200;
+  outline-offset: 1px;
+}
+
+.composerInput[aria-invalid="true"] {
+  border-color: #b60c0c;
+}
+
+.composerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
