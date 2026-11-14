@@ -14,6 +14,7 @@ import {
   getBusiness,
   saveBusiness,
   saveBookingSettings,
+  saveOwnerSettingsSection,
   saveWorkTypes,
   setAutoBooking,
   setIntakePaused,
@@ -277,6 +278,34 @@ test("잘못된 입력·가짜 세션은 요청하지 않으며 오류·만료�
   mock.restoreAll();
   response({ businessName: "빠진 응답" });
   await assert.rejects(getBusiness("own_test"));
+});
+test("설정에서 접수와 자동 예약이 함께 바뀌면 전송하지 않고 하나만 변경할 때 서버 상태를 반영한다", async () => {
+  const saved = {
+    business,
+    booking,
+    workTypes,
+    serviceAreas: [],
+    intakePaused: false,
+  };
+  const fetch = response({ intakePaused: true });
+  await assert.rejects(
+    saveOwnerSettingsSection("own_test", "intake", saved, {
+      ...saved,
+      intakePaused: true,
+      booking: { ...booking, autoBookingEnabled: true },
+    }),
+    /하나씩/,
+  );
+  assert.equal(fetch.mock.callCount(), 0);
+  assert.deepEqual(
+    await saveOwnerSettingsSection("own_test", "intake", saved, {
+      ...saved,
+      intakePaused: true,
+    }),
+    { ...saved, intakePaused: true },
+  );
+  assert.equal(fetch.mock.callCount(), 1);
+  assert.match(String(fetch.mock.calls[0].arguments[0]), /\/intake$/);
 });
 test("문자 인증·로그인·계정 수정·로그아웃은 실제 계약으로 호출하고 원문 번호 형식은 유지한다", async () => {
   let fetch = response({

@@ -16,10 +16,15 @@ import type {
   CustomerMessage,
   SendCustomerInput,
 } from "@/lib/customer-consultation";
-import type { IntakeBusiness, IntakeStatus } from "@/lib/customer-intake";
+import type {
+  IntakeBusiness,
+  IntakeStatus,
+  VisitInfo,
+} from "@/lib/customer-intake";
 import CustomerConsultation from "../consultation";
 import CustomerIntake from "../intake";
 import CustomerDemoVisit from "./demo-visit";
+import CustomerVisit from "./visit";
 
 const emptyBusiness: IntakeBusiness = {
   name: "업체 문의",
@@ -89,7 +94,7 @@ export default function CustomerLiveIntake({
     <CustomerIntake
       business={business}
       status={status}
-      textOnly
+      textOnly={visitDemo}
       visitDemo={visitDemo}
       photosEnabled={photoDemo}
       onRetry={() => {
@@ -134,6 +139,7 @@ function LiveConsultation({
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
+  const [visitDraft, setVisitDraft] = useState<VisitInfo | null>(null);
   const [ownerRequested, setOwnerRequested] = useState(false);
   const [ownerWillReview, setOwnerWillReview] = useState(false);
   const [waitingAfter, setWaitingAfter] = useState<number | null>(null);
@@ -261,11 +267,22 @@ function LiveConsultation({
   }
 
   if (showVisit && !ended)
-    return (
+    return visitDemo ? (
       <CustomerDemoVisit
         inquiryId={inquiryId}
         inquiryToken={inquiryToken}
         onBack={() => setShowVisit(false)}
+      />
+    ) : (
+      <CustomerVisit
+        business={business}
+        inquiryId={inquiryId}
+        inquiryToken={inquiryToken}
+        draft={visitDraft}
+        onBack={(draft) => {
+          setVisitDraft(draft);
+          setShowVisit(false);
+        }}
       />
     );
 
@@ -279,11 +296,12 @@ function LiveConsultation({
       photosEnabled={photoDemo}
       textOnly
       canContinue={
-        visitDemo &&
-        !ended &&
-        messages.some((message) => message.role === "CUSTOMER")
+        !ended && messages.some((message) => message.role === "CUSTOMER")
       }
-      onContinue={visitDemo && !ended ? () => setShowVisit(true) : undefined}
+      onContinue={!ended ? () => setShowVisit(true) : undefined}
+      continueLabel={
+        visitDemo ? "시연용 방문정보 입력" : "접수 내용·방문정보 확인"
+      }
       liveNotice={
         ended
           ? "이 상담에 더 이상 접근할 수 없어요. 업체에 문의해 주세요."
