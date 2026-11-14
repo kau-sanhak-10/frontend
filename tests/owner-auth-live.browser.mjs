@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
+import { mkdir } from "node:fs/promises";
 
 const base = "http://127.0.0.1:35115";
 const api = "http://127.0.0.1:35116";
@@ -277,8 +278,27 @@ try {
   await saveSettings.click();
   await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
   assert.equal(businessWrites, 2);
+  await mkdir(".impeccable/review", { recursive: true });
+  await page.screenshot({
+    path: ".impeccable/review/settings-edit.png",
+    fullPage: true,
+  });
   await page.reload();
   await page.getByRole("heading", { name: "새 업체명" }).waitFor();
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+    );
+    await page.screenshot({
+      path: `.impeccable/review/settings-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: /접수·예약/ }).click();
   await page.getByRole("checkbox", { name: "신규 접수 잠시 중지" }).check();
   assert.equal(

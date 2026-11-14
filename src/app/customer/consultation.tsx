@@ -41,6 +41,7 @@ type Props = {
   onCancelUpload?: (file: File) => Promise<void>;
   onHandoff?: () => Promise<void>;
   onContinue?: () => void;
+  continueLabel?: string;
   onBack?: () => void;
 };
 
@@ -61,6 +62,7 @@ export default function CustomerConsultation({
   onCancelUpload,
   onHandoff,
   onContinue,
+  continueLabel,
   onBack,
 }: Props) {
   const [view, setView] = useState<"chat" | "photo" | "fields">("chat");
@@ -414,7 +416,9 @@ export default function CustomerConsultation({
                 disabled={textOnly && (pending || unsent)}
                 onClick={textOnly ? onContinue : () => setView("fields")}
               >
-                {textOnly ? "시연용 방문정보 입력" : "정리된 접수 정보 확인"}
+                {textOnly
+                  ? (continueLabel ?? "시연용 방문정보 입력")
+                  : "정리된 접수 정보 확인"}
               </button>
             )}
           </div>

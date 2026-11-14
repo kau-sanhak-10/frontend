@@ -17,14 +17,18 @@ import {
 import styles from "../intake.module.css";
 import { FieldList } from "../consultation";
 
-export default function CustomerDemoVisit({
+export default function CustomerInquiryReview({
   inquiryId,
   inquiryToken,
   onBack,
+  demo = true,
+  onVisit,
 }: {
   inquiryId: number;
   inquiryToken: string;
   onBack: () => void;
+  demo?: boolean;
+  onVisit?: () => void;
 }) {
   const { origin, destination } = demoVisitLocations;
   const heading = useRef<HTMLHeadingElement>(null);
@@ -189,9 +193,11 @@ export default function CustomerDemoVisit({
 
   return (
     <main className={styles.shell}>
-      <p className={styles.preview}>
-        시연용 접수 · 실제 출장 요청이나 예약이 아니에요.
-      </p>
+      {demo && (
+        <p className={styles.preview}>
+          시연용 접수 · 실제 출장 요청이나 예약이 아니에요.
+        </p>
+      )}
       <header className={styles.header}>
         <button
           className={styles.back}
@@ -203,7 +209,7 @@ export default function CustomerDemoVisit({
           <Image src="/customer/back.svg" width={22} height={22} alt="" />
         </button>
         <h1 ref={heading} tabIndex={-1}>
-          시연용 방문정보
+          {demo ? "시연용 방문정보" : "접수 내용 확인"}
         </h1>
       </header>
       <section className={styles.content} aria-busy={busy}>
@@ -309,32 +315,36 @@ export default function CustomerDemoVisit({
           ) : null}
           {fieldSaved && <p role="status">접수 정보가 저장됐어요.</p>}
         </section>
-        <h2>한국항공대학교로 방문 접수</h2>
-        <dl className={styles.review}>
-          <dt>출발지 예시</dt>
-          <dd>
-            {origin.name}
-            <br />
-            {origin.address}
-          </dd>
-          <dt>저장할 방문지</dt>
-          <dd>
-            {destination.name}
-            <br />
-            {destination.address}
-          </dd>
-        </dl>
-        <p className={styles.hint}>
-          방문지와 시연용 연락처만 이 문의에 저장해요. 지도 검색과 이동시간
-          계산은 하지 않아요.
-        </p>
-        {error && (
-          <p className={styles.error} role="alert">
-            {error}
-          </p>
-        )}
-        {state === "saved" && (
-          <p role="status">문의 #{inquiryId}에 방문정보가 저장됐어요.</p>
+        {demo && (
+          <>
+            <h2>한국항공대학교로 방문 접수</h2>
+            <dl className={styles.review}>
+              <dt>출발지 예시</dt>
+              <dd>
+                {origin.name}
+                <br />
+                {origin.address}
+              </dd>
+              <dt>저장할 방문지</dt>
+              <dd>
+                {destination.name}
+                <br />
+                {destination.address}
+              </dd>
+            </dl>
+            <p className={styles.hint}>
+              방문지와 시연용 연락처만 이 문의에 저장해요. 지도 검색과 이동시간
+              계산은 하지 않아요.
+            </p>
+            {error && (
+              <p className={styles.error} role="alert">
+                {error}
+              </p>
+            )}
+            {state === "saved" && (
+              <p role="status">문의 #{inquiryId}에 방문정보가 저장됐어요.</p>
+            )}
+          </>
         )}
       </section>
       {edit === null && (
@@ -342,14 +352,16 @@ export default function CustomerDemoVisit({
           <button
             type="button"
             className={styles.primary}
-            disabled={busy || state === "blocked"}
-            onClick={state === "saved" ? onBack : save}
+            disabled={busy || (demo ? state === "blocked" : !onVisit)}
+            onClick={!demo ? onVisit : state === "saved" ? onBack : save}
           >
-            {state === "saved"
-              ? "상담으로 돌아가기"
-              : state === "saving"
-                ? "방문정보 저장 중…"
-                : "한국항공대학교로 저장"}
+            {!demo
+              ? "방문정보 입력·수정"
+              : state === "saved"
+                ? "상담으로 돌아가기"
+                : state === "saving"
+                  ? "방문정보 저장 중…"
+                  : "한국항공대학교로 저장"}
           </button>
         </footer>
       )}
