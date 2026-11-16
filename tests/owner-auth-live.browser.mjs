@@ -49,6 +49,8 @@ try {
   let intakePaused = false;
   let intakeWrites = 0;
   let reconcileFailures = 0;
+  let autoBookingEnabled = true;
+  let expectedBusinessName = "새 업체명";
   await context.route("**/*", async (route) => {
     const request = route.request();
     const { origin, pathname } = new URL(request.url());
@@ -98,7 +100,7 @@ try {
           ...owner,
           ownerName: "테스트",
           phone: "01000000000",
-          autoBookingEnabled: true,
+          autoBookingEnabled,
           intakePaused,
         });
       case "GET /api/v1/owner/business":
@@ -118,7 +120,7 @@ try {
           maxDailyVisits: null,
           bufferMinutes: 0,
           travelMode: "CAR",
-          autoBookingEnabled: true,
+          autoBookingEnabled,
         });
       case "GET /api/v1/owner/work-types":
         assert.equal(request.headers().authorization, "Bearer own_test");
@@ -130,7 +132,7 @@ try {
         assert.equal(request.headers().authorization, "Bearer own_test");
         assert.deepEqual(request.postDataJSON(), {
           ...business,
-          businessName: "새 업체명",
+          businessName: expectedBusinessName,
         });
         if (++businessWrites === 1) return reply(null, 503, "UNAVAILABLE");
         business = request.postDataJSON();
@@ -140,6 +142,8 @@ try {
         assert.equal(typeof request.postDataJSON().intakePaused, "boolean");
         intakePaused = request.postDataJSON().intakePaused;
         if (++intakeWrites === 1) {
+          business = { ...business, contactPhone: "0212345678" };
+          autoBookingEnabled = false;
           reconcileFailures = 1;
           return route.abort("failed");
         }
@@ -306,6 +310,10 @@ try {
     });
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: /업체정보/ }).click();
+  expectedBusinessName = "작성 중인 업체명";
+  await businessName.fill(expectedBusinessName);
+  await page.getByRole("button", { name: "설정 목록으로" }).click();
   await page.getByRole("button", { name: /접수·예약/ }).click();
   await page.getByRole("checkbox", { name: "신규 접수 잠시 중지" }).check();
   assert.equal(
@@ -330,7 +338,11 @@ try {
     .click();
   await page.getByText(/서버의 현재 상태를 확인했어요/).waitFor();
   const pause = page.getByRole("checkbox", { name: "신규 접수 잠시 중지" });
+  const auto = page.getByRole("checkbox", { name: "자동 예약 켜기" });
+  assert.equal(await auto.isChecked(), false);
+  assert.equal(await auto.isDisabled(), false);
   assert.equal(await pause.isChecked(), true);
+  assert.equal(await pause.isDisabled(), false);
   await pause.uncheck();
   assert.equal(await saveSettings.isEnabled(), true);
   await saveSettings.click();
@@ -341,6 +353,22 @@ try {
   await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
   assert.equal(intakePaused, true);
   assert.equal(intakeWrites, 3);
+  await page.getByRole("button", { name: "설정 목록으로" }).click();
+  await page.getByRole("button", { name: /업체정보/ }).click();
+  assert.equal(await businessName.inputValue(), expectedBusinessName);
+  assert.equal(
+    await page.getByLabel("대표 연락처 (선택)", { exact: true }).inputValue(),
+    "0212345678",
+  );
+  await page.screenshot({
+    path: ".impeccable/review/settings-rebased-draft.png",
+    fullPage: true,
+  });
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(business.contactPhone, "0212345678");
+  assert.equal(business.businessName, expectedBusinessName);
+  assert.equal(businessWrites, 3);
   await page.getByRole("button", { name: "설정 목록으로" }).click();
   await page.getByRole("link", { name: "내 계정으로" }).click();
   const logout = page.getByRole("button", { name: "로그아웃" });
@@ -354,7 +382,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: owner verification/details, settings save/retry/reload, applied-PATCH lost response/re-read failure/recovery/input retention/corrective save, pause despite incomplete auto-booking setup, logout",
+    "PASS: owner verification/details, save/retry/reload, lost-response reconciliation, untouched phone/auto-booking refresh with intentional name retention, no dual checkbox lock or stale-phone overwrite, corrective save, logout",
   );
 } finally {
   await browser.close();

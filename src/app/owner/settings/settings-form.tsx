@@ -129,6 +129,7 @@ export default function SettingsForm({
     try {
       const current = await onReload!();
       if (!mounted.current) return;
+      setDraft((values) => refreshSettingsDraft(null, values, saved, current));
       setSaved(current);
       setNeedsReload(false);
       setNotice("서버의 현재 상태를 확인했어요. 작성하던 내용은 유지했어요.");

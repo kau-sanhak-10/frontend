@@ -226,6 +226,69 @@ test("작업을 끄면 순서가 바뀌거나 항목이 빠져도 해당 작업�
   assert.equal(setWorkTypeActive(repair, false, [leak]).durationMinutes, 60);
   assert.equal(setWorkTypeActive(repair, true, [leak]).durationMinutes, 90);
 });
+
+test("저장 결과 재조회는 직접 수정한 필드만 보존하고 나머지를 최신값으로 갱신한다", () => {
+  const previous = {
+    business,
+    booking: { ...booking, autoBookingEnabled: true },
+    workTypes,
+    serviceAreas: [],
+    intakePaused: false,
+  };
+  const draft = {
+    ...previous,
+    business: { ...business, businessName: "작성 중인 업체명" },
+    booking: {
+      ...previous.booking,
+      bufferMinutes: 35,
+      businessHours: booking.businessHours.map((h) =>
+        h.dayOfWeek === 1 ? { ...h, openTime: "10:00" } : h,
+      ),
+    },
+    workTypes: [{ ...workTypes[0], durationMinutes: 90 }],
+    intakePaused: true,
+  };
+  const current = {
+    ...previous,
+    business: {
+      ...business,
+      contactPhone: "0212345678",
+      customerNotice: "최신 안내",
+    },
+    booking: {
+      ...previous.booking,
+      autoBookingEnabled: false,
+      maxDailyVisits: 5,
+      businessHours: booking.businessHours.map((h) => ({
+        ...h,
+        closeTime: h.isClosed ? null : "19:00",
+      })),
+    },
+    workTypes: [{ ...workTypes[0], autoBookingAllowed: false }],
+    serviceAreas: [{ regionCode: "12345", regionName: "최신 지역" }],
+    intakePaused: true,
+  };
+  const restored = refreshSettingsDraft(null, draft, previous, current);
+  assert.equal(restored.business.businessName, "작성 중인 업체명");
+  assert.equal(restored.business.contactPhone, "0212345678");
+  assert.equal(restored.business.customerNotice, "최신 안내");
+  assert.equal(restored.booking.autoBookingEnabled, false);
+  assert.equal(restored.booking.maxDailyVisits, 5);
+  assert.equal(restored.booking.bufferMinutes, 35);
+  assert.equal(restored.booking.businessHours[0].openTime, "10:00");
+  assert.equal(restored.booking.businessHours[0].closeTime, "19:00");
+  assert.equal(restored.booking.businessHours[1].closeTime, "19:00");
+  assert.equal(restored.workTypes[0].durationMinutes, 90);
+  assert.equal(restored.workTypes[0].autoBookingAllowed, false);
+  assert.deepEqual(restored.serviceAreas, current.serviceAreas);
+  assert.equal(restored.intakePaused, true);
+  assert.equal(draft.business.contactPhone, null);
+  assert.equal(current.business.businessName, business.businessName);
+  assert.deepEqual(
+    refreshSettingsDraft(null, previous, previous, current),
+    current,
+  );
+});
 test("설정 저장은 own 토큰 헤더와 정확한 DTO만 보내며 상태 변경을 분리한다", async () => {
   let fetch = response(booking);
   await saveBookingSettings("own_test", booking);
