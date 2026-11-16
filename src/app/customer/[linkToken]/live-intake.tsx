@@ -16,15 +16,11 @@ import type {
   CustomerMessage,
   SendCustomerInput,
 } from "@/lib/customer-consultation";
-import type {
-  IntakeBusiness,
-  IntakeStatus,
-  VisitInfo,
-} from "@/lib/customer-intake";
+import type { IntakeBusiness, IntakeStatus } from "@/lib/customer-intake";
 import CustomerConsultation from "../consultation";
 import CustomerIntake from "../intake";
 import CustomerDemoVisit from "./demo-visit";
-import CustomerVisit from "./visit";
+import CustomerVisit, { type VisitDraft } from "./visit";
 
 const emptyBusiness: IntakeBusiness = {
   name: "업체 문의",
@@ -139,7 +135,7 @@ function LiveConsultation({
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
-  const [visitDraft, setVisitDraft] = useState<VisitInfo | null>(null);
+  const [visitDraft, setVisitDraft] = useState<VisitDraft | null>(null);
   const [ownerRequested, setOwnerRequested] = useState(false);
   const [ownerWillReview, setOwnerWillReview] = useState(false);
   const [waitingAfter, setWaitingAfter] = useState<number | null>(null);

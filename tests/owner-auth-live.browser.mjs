@@ -47,6 +47,8 @@ try {
     serviceDescription: null,
   };
   let intakePaused = false;
+  let intakeWrites = 0;
+  let reconcileFailures = 0;
   await context.route("**/*", async (route) => {
     const request = route.request();
     const { origin, pathname } = new URL(request.url());
@@ -91,11 +93,12 @@ try {
         });
       case "GET /api/v1/owner/me":
         assert.equal(request.headers().authorization, "Bearer own_test");
+        if (reconcileFailures-- > 0) return reply(null, 503, "UNAVAILABLE");
         return reply({
           ...owner,
           ownerName: "테스트",
           phone: "01000000000",
-          autoBookingEnabled: false,
+          autoBookingEnabled: true,
           intakePaused,
         });
       case "GET /api/v1/owner/business":
@@ -115,7 +118,7 @@ try {
           maxDailyVisits: null,
           bufferMinutes: 0,
           travelMode: "CAR",
-          autoBookingEnabled: false,
+          autoBookingEnabled: true,
         });
       case "GET /api/v1/owner/work-types":
         assert.equal(request.headers().authorization, "Bearer own_test");
@@ -134,8 +137,12 @@ try {
         return reply(business);
       case "PATCH /api/v1/owner/intake":
         assert.equal(request.headers().authorization, "Bearer own_test");
-        assert.deepEqual(request.postDataJSON(), { intakePaused: true });
-        intakePaused = true;
+        assert.equal(typeof request.postDataJSON().intakePaused, "boolean");
+        intakePaused = request.postDataJSON().intakePaused;
+        if (++intakeWrites === 1) {
+          reconcileFailures = 1;
+          return route.abort("failed");
+        }
         return reply({ intakePaused });
       case "GET /api/v1/owner/inquiries":
         assert.equal(request.headers().authorization, "Bearer own_test");
@@ -306,8 +313,34 @@ try {
     true,
   );
   await saveSettings.click();
+  await page.getByText(/서버 상태를 아직 확인하지 못했어요/).waitFor();
+  await page.screenshot({
+    path: ".impeccable/review/settings-unknown-save.png",
+    fullPage: true,
+  });
+  assert.equal(intakePaused, true);
+  assert.equal(
+    await page
+      .getByRole("checkbox", { name: "신규 접수 잠시 중지" })
+      .isDisabled(),
+    true,
+  );
+  await page
+    .getByRole("button", { name: "서버 상태 다시 확인", exact: true })
+    .click();
+  await page.getByText(/서버의 현재 상태를 확인했어요/).waitFor();
+  const pause = page.getByRole("checkbox", { name: "신규 접수 잠시 중지" });
+  assert.equal(await pause.isChecked(), true);
+  await pause.uncheck();
+  assert.equal(await saveSettings.isEnabled(), true);
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(intakePaused, false);
+  await pause.check();
+  await saveSettings.click();
   await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
   assert.equal(intakePaused, true);
+  assert.equal(intakeWrites, 3);
   await page.getByRole("button", { name: "설정 목록으로" }).click();
   await page.getByRole("link", { name: "내 계정으로" }).click();
   const logout = page.getByRole("button", { name: "로그아웃" });
@@ -321,7 +354,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: owner verification, inquiry details, settings save/retry/reload, intake control and logout",
+    "PASS: owner verification/details, settings save/retry/reload, applied-PATCH lost response/re-read failure/recovery/input retention/corrective save, pause despite incomplete auto-booking setup, logout",
   );
 } finally {
   await browser.close();

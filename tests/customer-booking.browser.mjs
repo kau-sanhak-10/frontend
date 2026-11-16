@@ -18,8 +18,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on("pageerror", (e) => errors.push(e.message));
   // Preview must never call the booking API, send SMS, or use authenticated business data.
+  const unexpectedRequests = [];
   page.on("request", (request) => {
-    assert.equal(new URL(request.url()).origin, base);
+    const url = new URL(request.url());
+    if (url.origin !== base || url.pathname.startsWith("/api/"))
+      unexpectedRequests.push(request.url());
   });
   async function open(scene = "normal") {
     await page.goto(`${base}/customer/booking-preview?scene=${scene}`);
@@ -188,9 +191,33 @@ try {
     .getByRole("button", { name: "기존 예약 확인", exact: true })
     .click();
   await page.getByRole("heading", { name: "방문 예약이 확정됐어요" }).waitFor();
+  await open("existing-error");
+  await select();
+  await finish();
+  const lookup = page.getByRole("button", {
+    name: "기존 예약 확인",
+    exact: true,
+  });
+  await lookup.click();
+  await page.getByText(/기존 예약을 불러오지 못했어요/).waitFor();
+  await page.screenshot({
+    path: `${shots}/booking-existing-lookup-error.png`,
+    fullPage: true,
+  });
+  assert.equal(
+    await page
+      .getByRole("button", { name: "이 시간으로 예약 확정", exact: true })
+      .count(),
+    0,
+  );
+  await page.getByText(/확정 요청 1회 .*기존 예약 조회 1회/).waitFor();
+  await lookup.click();
+  await page.getByRole("heading", { name: "방문 예약이 확정됐어요" }).waitFor();
+  await page.getByText(/확정 요청 1회 .*기존 예약 조회 2회/).waitFor();
   assert.deepEqual(errors, []);
+  assert.deepEqual(unexpectedRequests, []);
   console.log(
-    "PASS: booking selection/review/auth gate/confirmation, same-key retry, conflict, existing, notification, empty/blocked/errors, 4 widths; preview has no external requests",
+    "PASS: booking selection/review/auth gate/confirmation, same-key retry, conflict, existing-lookup failure/retry without new confirmation, notification, empty/blocked/errors, 4 widths; no cross-origin or same-origin API requests",
   );
 } finally {
   await browser.close();

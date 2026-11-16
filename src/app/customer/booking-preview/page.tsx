@@ -23,6 +23,7 @@ export default async function Page({
       "phone-expired",
       "notification",
       "existing",
+      "existing-error",
       "unverified",
     ].find((v) => v === query.scene) ?? "normal";
   return <BookingPreview scene={scene} />;

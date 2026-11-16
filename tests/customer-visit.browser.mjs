@@ -16,6 +16,15 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await page.addInitScript(() => {
+    const decode = window.createImageBitmap.bind(window);
+    window.createImageBitmap = async (...args) => {
+      await new Promise((resolve) => {
+        window.finishPhotoRead = resolve;
+      });
+      return decode(...args);
+    };
+  });
   let creates = 0,
     writes = 0,
     fieldWrites = 0,
@@ -154,6 +163,7 @@ try {
   });
   await page.goto(`${base}/customer/${"a".repeat(43)}`);
   await page.getByRole("checkbox", { name: /개인정보 수집/ }).check();
+  await page.getByRole("checkbox", { name: /사진 수집·분석 동의/ }).check();
   await page
     .getByRole("button", { name: "동의하고 문의 시작", exact: true })
     .dblclick();
@@ -162,6 +172,22 @@ try {
     .fill("온수가 안 나와요");
   await page
     .getByRole("button", { name: "메시지 보내기", exact: true })
+    .click();
+  const continueIntake = page.getByRole("button", {
+    name: "접수 내용·방문정보 확인",
+    exact: true,
+  });
+  await continueIntake.waitFor({ state: "visible" });
+  await page
+    .getByLabel("사진 파일 선택", { exact: true })
+    .setInputFiles("public/owner/examples/boiler-example.png");
+  await page.waitForFunction(
+    () => typeof window.finishPhotoRead === "function",
+  );
+  assert.equal(await continueIntake.isDisabled(), true);
+  await page.evaluate(() => window.finishPhotoRead());
+  await page
+    .getByRole("button", { name: "boiler-example.png 첨부 취소", exact: true })
     .click();
   await page
     .getByRole("button", { name: "접수 내용·방문정보 확인", exact: true })
@@ -248,11 +274,22 @@ try {
       });
   }
   await save.click();
+  await page.getByText(/최신 방문정보를 확인한 뒤/).waitFor();
+  assert.equal(writes, 3);
+  await page
+    .getByRole("button", {
+      name: "내 입력 대신 최신 방문정보 가져오기",
+      exact: true,
+    })
+    .click();
+  await name.fill("새 테스트 이름");
+  await save.click();
   await page.getByText(/방문정보가 저장됐어요/).waitFor();
   assert.equal(writes, 4);
   assert.equal(visit.name, "새 테스트 이름");
   assert.equal(visit.phone, "01000000000");
   assert.equal(creates, 1);
+  assert.equal(visit.accessNote, "사장님이 추가한 최신 안내");
   // Returning to the form reuses the saved value, not a seeded example.
   await page
     .getByRole("button", { name: "방문정보 입력·수정", exact: true })
@@ -268,7 +305,78 @@ try {
   await page
     .getByRole("button", { name: "상담으로 돌아가기", exact: true })
     .click();
+  ownerLocked = false;
+  visit = { ...visit, accessNote: "사장님이 바꾼 출입 안내" };
+  version++;
+  await page
+    .getByRole("button", { name: "접수 내용·방문정보 확인", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "방문정보 입력·수정", exact: true })
+    .click();
+  await page.getByText(/최신 방문정보:/).waitFor();
+  assert.equal(await name.inputValue(), "보존할 이름");
+  await save.click();
+  await page.getByText(/최신 방문정보를 확인한 뒤/).waitFor();
+  assert.equal(writes, 5);
+  assert.equal(visit.accessNote, "사장님이 바꾼 출입 안내");
+  await page.screenshot({
+    path: ".impeccable/review/visit-retained-draft-conflict.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", {
+      name: "내 입력 대신 최신 방문정보 가져오기",
+      exact: true,
+    })
+    .click();
+  await name.fill("주소 변경 전 이름");
+  await save.click();
+  await page.getByText(/방문정보가 저장됐어요/).waitFor();
+  assert.equal(writes, 6);
+  assert.equal(visit.accessNote, "사장님이 바꾼 출입 안내");
+  await page
+    .getByRole("button", { name: "상담으로 돌아가기", exact: true })
+    .click();
+  visit = {
+    ...visit,
+    address: "사장님이 바꾼 주소",
+    lat: 37.6,
+    accessNote: "사장님이 바꾼 출입 안내",
+  };
+  version++;
+  await page
+    .getByRole("button", { name: "접수 내용·방문정보 확인", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "방문정보 입력·수정", exact: true })
+    .click();
+  await page.getByText(/최신 방문정보:/).waitFor();
+  assert.equal(await name.inputValue(), "주소 변경 전 이름");
+  await save.click();
+  await page.getByText(/최신 방문정보를 확인한 뒤/).waitFor();
+  assert.equal(writes, 6);
+  assert.equal(visit.accessNote, "사장님이 바꾼 출입 안내");
+  await page
+    .getByRole("button", {
+      name: "내 입력 대신 최신 방문정보 가져오기",
+      exact: true,
+    })
+    .click();
+  assert.equal(
+    await page.getByLabel("방문 주소", { exact: true }).inputValue(),
+    visit.address,
+  );
+  await name.fill("최신 정보 확인한 이름");
+  await save.click();
+  await page.getByText(/방문정보가 저장됐어요/).waitFor();
+  assert.equal(writes, 7);
+  assert.equal(visit.accessNote, "사장님이 바꾼 출입 안내");
+  await page
+    .getByRole("button", { name: "상담으로 돌아가기", exact: true })
+    .click();
   noCoordinates = true;
+  version++;
   await page
     .getByRole("button", { name: "접수 내용·방문정보 확인", exact: true })
     .click();
@@ -276,11 +384,17 @@ try {
     .getByRole("button", { name: "방문정보 입력·수정", exact: true })
     .click();
   await page.getByText(/주소 검색을 연결하고 있어요/).waitFor();
+  await page
+    .getByRole("button", {
+      name: "내 입력 대신 최신 방문정보 가져오기",
+      exact: true,
+    })
+    .click();
   await save.click();
-  assert.equal(writes, 5);
+  assert.equal(writes, 7);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: normal intake, one create on double-click, field edit, phone rejection/input retention, version conflict/latest snapshot, owner guard, no invented coordinates, 3 widths",
+    "PASS: normal intake, one create, photo-picking navigation guard, field/phone validation, retained-draft version/address conflict without overwrite, explicit latest-data acceptance, owner guard, no invented coordinates, 3 widths",
   );
 } finally {
   await browser.close();

@@ -413,7 +413,7 @@ export default function CustomerConsultation({
               <button
                 type="button"
                 className={styles.secondary}
-                disabled={textOnly && (pending || unsent)}
+                disabled={picking || (textOnly && (pending || unsent))}
                 onClick={textOnly ? onContinue : () => setView("fields")}
               >
                 {textOnly

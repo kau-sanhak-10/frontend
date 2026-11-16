@@ -140,7 +140,17 @@ function LiveSettings({ token }: { token: string }) {
   }
 
   if (result?.ok)
-    return <SettingsForm initialData={result.data} onSave={save} />;
+    return (
+      <SettingsForm
+        initialData={result.data}
+        onSave={save}
+        onReload={async () => {
+          const current = await load();
+          if (!current.ok) throw new Error("업체 설정을 다시 확인해 주세요.");
+          return current.data;
+        }}
+      />
+    );
   return (
     <SettingsStatus
       title={

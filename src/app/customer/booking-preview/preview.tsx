@@ -17,6 +17,8 @@ export default function BookingPreview({ scene }: { scene: string }) {
   const keys = useRef(new Set<string>());
   const [back, setBack] = useState(false);
   const [verifications, setVerifications] = useState(0);
+  const [lookups, setLookups] = useState(0);
+  const lookupCalls = useRef(0);
   const [stats, setStats] = useState({ calls: 0, keys: 0 });
   const load = useCallback(
     async (from: string, signal: AbortSignal): Promise<AvailableVisits> => {
@@ -95,12 +97,15 @@ export default function BookingPreview({ scene }: { scene: string }) {
             setVerifications((v) => v + 1);
             return true;
           }}
-          onExisting={async () =>
-            result({
+          onExisting={async () => {
+            setLookups(++lookupCalls.current);
+            if (scene === "existing-error" && lookupCalls.current === 1)
+              throw new Error("preview lookup failed");
+            return result({
               startAt: "2026-12-01T14:00:00+09:00",
               endAt: "2026-12-01T15:00:00+09:00",
-            })
-          }
+            });
+          }}
           onConfirm={async (slot, key) => {
             calls.current++;
             keys.current.add(key);
@@ -113,7 +118,7 @@ export default function BookingPreview({ scene }: { scene: string }) {
               throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "");
             if (calls.current === 1 && scene === "phone-expired")
               throw new ApiError(403, "PHONE_NOT_VERIFIED", "");
-            if (scene === "existing")
+            if (scene === "existing" || scene === "existing-error")
               throw new ApiError(409, "RESERVATION_ALREADY_EXISTS", "", {
                 reservationId: 101,
               });
@@ -123,7 +128,7 @@ export default function BookingPreview({ scene }: { scene: string }) {
       )}
       <p className={styles.preview}>
         확인용: 확정 요청 {stats.calls}회 · 요청 식별자 {stats.keys}개 · 예시
-        인증 {verifications}회
+        인증 {verifications}회 · 기존 예약 조회 {lookups}회
       </p>
     </>
   );

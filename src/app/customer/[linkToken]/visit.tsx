@@ -16,6 +16,8 @@ import CustomerIntake from "../intake";
 import CustomerInquiryReview from "./demo-visit";
 import styles from "../intake.module.css";
 
+export type VisitDraft = { visit: VisitInfo; version: number };
+
 export default function CustomerVisit({
   business,
   inquiryId,
@@ -26,8 +28,8 @@ export default function CustomerVisit({
   business: IntakeBusiness;
   inquiryId: number;
   inquiryToken: string;
-  draft: VisitInfo | null;
-  onBack: (draft: VisitInfo | null) => void;
+  draft: VisitDraft | null;
+  onBack: (draft: VisitDraft | null) => void;
 }) {
   const [snapshot, setSnapshot] = useState<Awaited<
     ReturnType<typeof getCustomerVisitInfo>
@@ -47,6 +49,7 @@ export default function CustomerVisit({
       (data) => {
         if (!controller.signal.aborted) {
           setSnapshot(data);
+          setConflict(!!initialDraft && initialDraft.version !== data.version);
           setLoadError(false);
         }
       },
@@ -55,7 +58,7 @@ export default function CustomerVisit({
       },
     );
     return () => controller.abort();
-  }, [inquiryId, inquiryToken, attempt]);
+  }, [inquiryId, inquiryToken, attempt, initialDraft]);
 
   if (editing && snapshot)
     return (
@@ -73,7 +76,7 @@ export default function CustomerVisit({
               type="button"
               className={styles.textButton}
               onClick={() => {
-                setDraft(snapshot.visit);
+                setDraft({ visit: snapshot.visit, version: snapshot.version });
                 setFormKey((v) => v + 1);
                 setConflict(false);
               }}
@@ -86,7 +89,7 @@ export default function CustomerVisit({
           key={formKey}
           business={business}
           initialStep="visit"
-          initialVisit={draft ?? snapshot.visit}
+          initialVisit={draft?.visit ?? snapshot.visit}
           addressReadOnly
           addressHint={
             snapshot.coordinates && snapshot.visit.address
@@ -94,11 +97,21 @@ export default function CustomerVisit({
               : "주소 검색을 연결하고 있어요. 임의의 위치로 저장하지 않아요. 다른 정보는 입력해 둘 수 있어요."
           }
           onBackToChat={(value) => {
-            setDraft(value);
+            setDraft({
+              visit: value,
+              version: draft?.version ?? snapshot.version,
+            });
             setEditing(false);
           }}
           onSaveVisit={async (value) => {
-            setDraft(value);
+            setDraft({
+              visit: value,
+              version: draft?.version ?? snapshot.version,
+            });
+            if (conflict)
+              throw new VisitInputError(
+                "최신 방문정보를 확인한 뒤 가져와 주세요. 작성하던 내용은 그대로 있어요.",
+              );
             if (
               !snapshot.coordinates ||
               !snapshot.visit.address ||
@@ -114,13 +127,14 @@ export default function CustomerVisit({
               const version = await saveCustomerVisitInfo(
                 inquiryId,
                 inquiryToken,
-                snapshot.version,
+                draft?.version ?? snapshot.version,
                 value,
                 snapshot.coordinates,
                 controller.signal,
               );
               if (controller.signal.aborted) return;
               setSnapshot({ ...snapshot, version, visit: value });
+              setDraft({ visit: value, version });
               setSaved(true);
               setEditing(false);
               setConflict(false);

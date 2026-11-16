@@ -47,9 +47,10 @@ export default function CustomerBooking({
   const [review, setReview] = useState(false);
   const [verified, setVerified] = useState(phoneVerified);
   const [confirmed, setConfirmed] = useState<ConfirmedVisit | null>(null);
-  const [issue, setIssue] = useState<ReturnType<typeof bookingIssue> | null>(
-    null,
-  );
+  const [issue, setIssue] = useState<{
+    kind: ReturnType<typeof bookingIssue>["kind"];
+    message: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const lock = useRef(false);
@@ -84,6 +85,7 @@ export default function CustomerBooking({
   async function act(
     task: (signal: AbortSignal) => Promise<void>,
     confirming = false,
+    existing = false,
   ) {
     if (lock.current) return;
     lock.current = true;
@@ -96,7 +98,14 @@ export default function CustomerBooking({
     } catch (error) {
       if (!controller.signal.aborted) {
         const problem = bookingIssue(error);
-        setIssue(problem);
+        setIssue(
+          existing && problem.kind === "retry"
+            ? {
+                kind: "existing",
+                message: "기존 예약을 불러오지 못했어요. 다시 확인해 주세요.",
+              }
+            : problem,
+        );
         setUncertain(confirming && problem.kind === "retry");
         if (problem.kind === "verify") setVerified(false);
         if (problem.kind === "conflict") {
@@ -326,10 +335,14 @@ export default function CustomerBooking({
                     className={base.textButton}
                     disabled={busy}
                     onClick={() =>
-                      void act(async (signal) => {
-                        const value = readConfirmedVisit(await onExisting());
-                        if (!signal.aborted) setConfirmed(value);
-                      })
+                      void act(
+                        async (signal) => {
+                          const value = readConfirmedVisit(await onExisting());
+                          if (!signal.aborted) setConfirmed(value);
+                        },
+                        false,
+                        true,
+                      )
                     }
                   >
                     기존 예약 확인

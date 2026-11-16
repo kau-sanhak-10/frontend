@@ -2,6 +2,10 @@
 
 ## PR #24 리뷰 반영 · 2026-11-16
 
+- CodeRabbit 후속 5개 인라인·1개 범위 밖 지적과 테스트 보완을 반영했다. 방문정보 임시 입력에는 원래 버전을 함께 보관한다. 상담에 다녀온 사이 서버 정보가 바뀌거나 저장이 충돌하면 내 입력을 남긴 채 최신 정보를 표시하고, 고객이 명시적으로 최신 방문정보를 가져오기 전에는 다시 저장하지 않는다. 읽기 전용 주소 변경도 같은 복구 동작을 사용한다.
+- 사진 파일을 읽는 중에는 다음 단계 이동을 막는다. 기존 예약 조회 실패는 기존 예약 재조회로만 복구하며 예약 확정을 다시 호출하지 않는다.
+- 접수 상태 저장 결과가 불명확하면 서버 설정을 다시 읽어 저장 기준만 갱신하고 입력은 유지한다. 재조회도 실패하면 새 저장을 막고 ‘서버 상태 다시 확인’으로 복구한다. 자동 예약의 준비 검사로 기존 자동 예약 상태에서 접수 중지를 막지 않는다.
+- 브라우저 회귀에는 같은 주소의 최신 출입 안내 보호·주소 변경 후 복구·사진 판독 대기 중 이동 차단·서버 반영 후 응답 유실과 재조회 실패/재시도·접수 재개 수정·기존 예약 조회 실패를 포함한다. 예약 프리뷰의 외부 요청뿐 아니라 같은 출처 `/api/` 요청도 금지한다.
 - `IDEMPOTENCY_KEY_REUSED`(409)는 결과 미확인 재시도가 아닌 재선택으로 처리한다. 같은 키를 반복 전송하지 않으며 가능시간 재조회·선택·최종 확인 뒤 새 요청 키를 사용한다. 네트워크 응답 유실은 기존대로 같은 키로 재확인한다.
 - `PHONE_NOT_VERIFIED`는 DS-04의 실제 HTTP 403에서도 접근 만료보다 먼저 구분한다. 선택한 시간을 유지하고 인증 후 같은 예약 요청을 이어간다. 다른 401/403의 접근 만료 처리는 유지한다.
 - `PHONE_NOT_VERIFIED`(DS-04 3.2, 403), `ADDRESS_NOT_FOUND`(3.3, 422)는 이미 승인된 명세 이름이며 BE-11/18·BE-15 구현 시 같은 이름을 사용한다. 현재 백엔드 develop에 해당 기능이 구현됐다는 뜻은 아니다.
@@ -29,7 +33,7 @@
 - `CUSTOMER_PHOTO_ENABLED=true`: 일반 업체 링크의 사진 동의·업로드를 여는 별도 서버 설정. 기존 `CUSTOMER_PHOTO_DEMO_ENABLED`는 지정 시연 링크용으로 유지한다. 기본은 비활성이다.
 - 사진 취소는 기존 결정대로 비활성 유지한다.
 - `/customer/booking-preview?scene=...`: `CUSTOMER_PREVIEW_ENABLED=true`일 때만 열리는 화면 예시. 실제 예약·문자·외부 API를 호출하지 않는다.
-- `normal`, `unverified`, `empty`, `load-error`, `owner`, `safety`, `expired`, `conflict`, `network`, `notification`, `existing` 예시를 지원한다.
+- `normal`, `unverified`, `empty`, `load-error`, `owner`, `safety`, `expired`, `conflict`, `network`, `key-reused`, `phone-expired`, `notification`, `existing`, `existing-error` 예시를 지원한다.
 - `customer-booking-api.ts`는 명세의 후보 조회·최종 확정 호출 모듈이다. UI 프리뷰는 이 모듈을 호출하지 않는다. 운영 연결은 FE-14에서 담당한다. 후보·확정 응답을 검사하고 문의 토큰은 헤더로만 전달한다.
 - 고객 토큰은 URL/영구 저장소에 남기지 않는다. 브라우저에서 서버의 접근 통제·문자 인증을 대체하지 않는다.
 
@@ -48,7 +52,7 @@ npm run build -- --webpack
 
 ```powershell
 # 로컬 실행본은 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:35116으로 빌드
-# 실행 시 CUSTOMER_LIVE_ENABLED=true, CUSTOMER_PREVIEW_ENABLED=true
+# 실행 시 CUSTOMER_LIVE_ENABLED=true, CUSTOMER_PREVIEW_ENABLED=true, CUSTOMER_PHOTO_ENABLED=true
 # 테스트 서버 포트 35115, API 응답은 각 테스트의 브라우저 격리 모의 응답
 $env:PLAYWRIGHT_MODULE_PATH = '설치된 playwright/index.mjs 절대 경로'
 $env:PLAYWRIGHT_CHANNEL = 'chrome'
