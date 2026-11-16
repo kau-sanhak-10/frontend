@@ -109,6 +109,10 @@ export default function BookingPreview({ scene }: { scene: string }) {
               throw new ApiError(409, "SLOT_UNAVAILABLE", "");
             if (calls.current === 1 && scene === "network")
               throw new Error("preview lost response");
+            if (calls.current === 1 && scene === "key-reused")
+              throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "");
+            if (calls.current === 1 && scene === "phone-expired")
+              throw new ApiError(403, "PHONE_NOT_VERIFIED", "");
             if (scene === "existing")
               throw new ApiError(409, "RESERVATION_ALREADY_EXISTS", "", {
                 reservationId: 101,

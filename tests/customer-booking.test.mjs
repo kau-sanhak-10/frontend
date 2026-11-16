@@ -84,6 +84,9 @@ test("확정된 서버 응답만 확정으로 읽고 알림 실패를 예약 실
     { ...confirmed, notifications: null },
     { ...confirmed, version: -1 },
     { ...confirmed, endAt: "not-time" },
+    { ...confirmed, startAt: undefined },
+    { ...confirmed, version: undefined },
+    { ...confirmed, notifications: [{ sendStatus: "FAILED" }] },
   ])
     assert.throws(() => readConfirmedVisit(data));
 });
@@ -131,6 +134,7 @@ test("잘못된 문의·시간·식별자는 서버로 전송하지 않는다", 
 test("예약 오류는 재선택·인증·사장님 확인·기존 예약·접근 만료로 구분한다", () => {
   for (const [code, kind] of [
     ["SLOT_UNAVAILABLE", "conflict"],
+    ["IDEMPOTENCY_KEY_REUSED", "conflict"],
     ["PHONE_NOT_VERIFIED", "verify"],
     ["RESERVATION_ALREADY_EXISTS", "existing"],
     ["AUTO_BOOKING_DISABLED", "owner"],
@@ -138,6 +142,10 @@ test("예약 오류는 재선택·인증·사장님 확인·기존 예약·접�
     ["TRAVEL_TIME_UNAVAILABLE", "owner"],
   ])
     assert.equal(bookingIssue(new ApiError(422, code, "")).kind, kind);
+  assert.equal(
+    bookingIssue(new ApiError(403, "PHONE_NOT_VERIFIED", "")).kind,
+    "verify",
+  );
   assert.equal(
     bookingIssue(new ApiError(401, "TOKEN_EXPIRED", "")).kind,
     "expired",

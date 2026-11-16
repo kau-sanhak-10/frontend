@@ -1,5 +1,13 @@
 # FE-07·FE-08·FE-11 후속 구현 · 2026-11-14
 
+## PR #24 리뷰 반영 · 2026-11-16
+
+- `IDEMPOTENCY_KEY_REUSED`(409)는 결과 미확인 재시도가 아닌 재선택으로 처리한다. 같은 키를 반복 전송하지 않으며 가능시간 재조회·선택·최종 확인 뒤 새 요청 키를 사용한다. 네트워크 응답 유실은 기존대로 같은 키로 재확인한다.
+- `PHONE_NOT_VERIFIED`는 DS-04의 실제 HTTP 403에서도 접근 만료보다 먼저 구분한다. 선택한 시간을 유지하고 인증 후 같은 예약 요청을 이어간다. 다른 401/403의 접근 만료 처리는 유지한다.
+- `PHONE_NOT_VERIFIED`(DS-04 3.2, 403), `ADDRESS_NOT_FOUND`(3.3, 422)는 이미 승인된 명세 이름이며 BE-11/18·BE-15 구현 시 같은 이름을 사용한다. 현재 백엔드 develop에 해당 기능이 구현됐다는 뜻은 아니다.
+- 예약 요청은 `POST /api/v1/customer/inquiries/{inquiryId}/reservations`, 문의 토큰과 UUID `Idempotency-Key`, 본문 `{ startAt }`이다. 5.2의 성공 `result`는 `reservationId`, `status: CONFIRMED`, `startAt`, `endAt`, `version`, `notifications[]`를 포함한다. 시각에는 시간대를 포함하고 알림이 없으면 빈 배열을 반환한다. 알림 실패는 예약 실패가 아니다.
+- 오류 분류·필수 응답 필드 검사를 보완하고 프리뷰에서 키 충돌 후 새 선택/새 키, 인증 만료(403) 후 기존 선택/동일 키 유지의 회귀 시나리오를 추가했다. 실제 예약 연결은 FE-14/FE-20에서 검증한다.
+
 기준: frontend develop `e46a812`, backend develop `b34b61b`, DS-04 API 명세 5.2, 기존 PRODUCT.md·고객/업체 설정 화면. 기존 미커밋 링크 검증 작업은 원래 작업 폴더에 보존했다. 새 의존성·테마·예약 정책은 추가하지 않았다.
 
 ## 구현과 연결 범위

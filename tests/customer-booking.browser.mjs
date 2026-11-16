@@ -92,6 +92,48 @@ try {
     .click();
   await page.getByRole("heading", { name: "방문 예약이 확정됐어요" }).waitFor();
   await page.getByText(/확정 요청 2회 · 요청 식별자 1개/).waitFor();
+  await open("key-reused");
+  await select();
+  await finish();
+  await page.getByText(/예약 요청 정보를 다시 확인해야 해요/).waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "예약 결과 다시 확인", exact: true })
+      .count(),
+    0,
+  );
+  assert.equal(
+    await page
+      .getByRole("button", { name: "선택한 시간 확인", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await page
+    .getByRole("button", { name: "가능시간 다시 불러오기", exact: true })
+    .click();
+  await select();
+  await finish();
+  await page.getByRole("heading", { name: "방문 예약이 확정됐어요" }).waitFor();
+  await page.getByText(/확정 요청 2회 · 요청 식별자 2개/).waitFor();
+  await open("phone-expired");
+  await select();
+  await finish();
+  await page.getByText(/예약을 확정하려면 휴대전화 인증이 필요해요/).waitFor();
+  await page.getByRole("heading", { name: "예약 최종 확인" }).waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "이 시간으로 예약 확정", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await page
+    .getByRole("button", { name: "휴대전화 인증", exact: true })
+    .click();
+  await finish();
+  await page.getByRole("heading", { name: "방문 예약이 확정됐어요" }).waitFor();
+  await page
+    .getByText(/확정 요청 2회 · 요청 식별자 1개 · 예시 인증 1회/)
+    .waitFor();
   await open("conflict");
   await select();
   await finish();

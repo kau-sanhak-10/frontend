@@ -19,6 +19,8 @@ export default async function Page({
       "expired",
       "conflict",
       "network",
+      "key-reused",
+      "phone-expired",
       "notification",
       "existing",
       "unverified",

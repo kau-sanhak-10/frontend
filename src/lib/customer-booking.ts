@@ -112,16 +112,22 @@ export function bookingIssue(error: unknown) {
       } as const;
     if (ownerReasons[error.code])
       return { kind: "owner", message: ownerReasons[error.code] } as const;
-    if ([401, 403].includes(error.status))
-      return {
-        kind: "expired",
-        message: "상담 접근 권한을 확인해 주세요. 입력한 내용은 남겨 뒀어요.",
-      } as const;
     if (error.code === "PHONE_NOT_VERIFIED")
       return {
         kind: "verify",
         message:
           "예약을 확정하려면 휴대전화 인증이 필요해요. 고른 시간은 유지돼요.",
+      } as const;
+    if ([401, 403].includes(error.status))
+      return {
+        kind: "expired",
+        message: "상담 접근 권한을 확인해 주세요. 입력한 내용은 남겨 뒀어요.",
+      } as const;
+    if (error.code === "IDEMPOTENCY_KEY_REUSED")
+      return {
+        kind: "conflict",
+        message:
+          "예약 요청 정보를 다시 확인해야 해요. 가능시간을 새로 불러와 선택해 주세요.",
       } as const;
     if (error.code === "SLOT_UNAVAILABLE")
       return {
