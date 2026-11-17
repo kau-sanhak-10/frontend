@@ -28,6 +28,9 @@ yarn-error.*
 *.log
 logs/
 
+### Local UI review evidence ###
+.impeccable/review/
+
 ### IDE ###
 .idea/
 .vscode/

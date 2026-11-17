@@ -288,6 +288,10 @@
 .field input:disabled {
   background: #f7f7f8;
 }
+.intakeEdit {
+  margin-block-start: 12px;
+  gap: 8px;
+}
 .footer {
   position: sticky;
   bottom: 0;

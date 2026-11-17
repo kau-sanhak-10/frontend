@@ -1,0 +1,29 @@
+제목: feat: 고객 상담·사진 보완·접수 확인 화면 구현 (FE-05)
+대상 브랜치: codex/fe03-customer-entry-review
+작업 브랜치: codex/fe05-customer-consultation
+
+FE-03 PR #8 위에 이어진 고객 화면 작업입니다. #8을 먼저 병합한 뒤 이 작업을 develop 대상으로 변경해 주세요. 병합·배포는 자동으로 하지 않습니다.
+
+작업 내용
+- 기존 Figma C02·C03·C05를 기준으로 고객 대화, 사진 첨부·촬영 가이드, 접수 정보·방문정보 확인·수정을 연결했습니다.
+- 사진 동의, JPG/PNG, 문의당 10장·장당 10MB, 디코딩 실패를 구분합니다.
+- 전송 실패 시 내용·사진을 보존하고, 같은 메시지 재시도에는 clientMsgId와 성공한 업로드를 재사용합니다.
+- 업로드 뒤 메시지가 실패해도 첨부 취소 후 글만 전송할 수 있습니다. 원격 파일 삭제를 주장하지 않습니다.
+- 참고정보 미확인·정보 충돌·고객 설명·사진 확인·사장님 확인·매뉴얼 해석을 구분합니다.
+- 실제 연결을 위한 상담 생성·메시지 전송 클라이언트와 응답 검사를 준비했습니다. 기존 requestApi를 재사용하며 토큰은 URL이나 브라우저 저장소에 쓰지 않습니다.
+
+확인
+- CUSTOMER_PREVIEW_ENABLED=true에서 /customer/consultation-preview
+- ?scene=retake: 촬영 안내 예시 / ?scene=summary: 접수 확인 예시
+- ?scene=chat&fail=send 또는 upload, handoff, expired: 첫 실패 이후 복구
+- 상단에 확인용·예시 데이터임을 표시합니다. 외부 API·AI·문자·실제 저장·예약은 호출하지 않습니다. 기본 환경에서는 404입니다.
+
+남은 실제 연동
+- BE-04/05/06/08의 업체 링크·문의·사진·메시지·상태·fields DTO와 서비스 AI 경로 확인 후 FE-08에서 연결합니다.
+- 사진 업로드 ticket, URL 유효기간·허용 헤더, complete 응답, 미연결 업로드 정리 정책을 맞춰야 합니다.
+- 고객 문자 인증·복구는 FE-20, 예약시간 선택은 FE-11/14의 범위를 유지합니다.
+
+연결 문서
+WBS FE-05: https://app.notion.com/p/3e824a392ba9817d8e0bd44492fd60d2
+WBS FE-08: https://app.notion.com/p/3e824a392ba981c1a63cfd3883f589ec
+기능·검증 범위: docs/FE-05.md

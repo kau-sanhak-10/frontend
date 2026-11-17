@@ -11,6 +11,11 @@ import {
   loginNoticeMessage,
 } from "@/lib/owner-auth/messages";
 import { requestVerificationCode, verifyCode } from "@/lib/owner-auth/mock-api";
+import { ApiError } from "@/lib/api";
+import {
+  confirmOwnerVerification,
+  requestOwnerVerification,
+} from "@/lib/owner-auth/api";
 import {
   formatPhone,
   formatSeconds,
@@ -18,7 +23,7 @@ import {
   normalizeCode,
   normalizePhone,
 } from "@/lib/owner-auth/phone";
-import { saveSession } from "@/lib/owner-auth/session";
+import { saveLiveSession, saveSession } from "@/lib/owner-auth/session";
 import type { AccountBlockStatus, LoginNotice } from "@/lib/owner-auth/types";
 import { useOwnerSession } from "@/lib/owner-auth/use-owner-session";
 
@@ -26,7 +31,21 @@ const HOME_PATH = "/owner";
 
 type Blocked = { status: AccountBlockStatus; rejectReason?: string };
 
-export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
+const blockedCodes: Record<string, AccountBlockStatus> = {
+  OWNER_NOT_REGISTERED: "NOT_REGISTERED",
+  OWNER_APPROVAL_PENDING: "APPROVAL_PENDING",
+  OWNER_REJECTED: "APPROVAL_REJECTED",
+  OWNER_RESTRICTED: "SUSPENDED",
+  OWNER_WITHDRAWN: "SUSPENDED",
+};
+
+export function OwnerLoginFlow({
+  notice,
+  preview,
+}: {
+  notice?: LoginNotice;
+  preview: boolean;
+}) {
   const router = useRouter();
   const session = useOwnerSession();
 
@@ -36,30 +55,39 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
-  const [expiresIn, setExpiresIn] = useState(0);
-  const [cooldown, setCooldown] = useState(0);
+  const [clock, setClock] = useState(0);
+  const [expiresAt, setExpiresAt] = useState(0);
+  const [resendAt, setResendAt] = useState(0);
+  const expiresIn = Math.max(0, Math.ceil((expiresAt - clock) / 1000));
+  const cooldown = Math.max(0, Math.ceil((resendAt - clock) / 1000));
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [blocked, setBlocked] = useState<Blocked | null>(null);
   // 요청마다 번호표를 붙여, 응답이 오기 전에 번호 변경·재발송·초기화가 있었으면
   // 늦게 온 응답(성공·오류 모두)은 화면에 적용하지 않습니다.
   const requestId = useRef(0);
+  const verificationId = useRef<number | null>(null);
   const busy = sending || verifying;
+  const signedIn =
+    session.status === "active" &&
+    Boolean(session.session.accessToken) !== preview;
 
   // 유효한 로그인이 있으면 다시 인증하지 않고 홈으로 보냅니다.
   useEffect(() => {
-    if (session.status === "active") router.replace(HOME_PATH);
-  }, [session.status, router]);
+    if (signedIn) router.replace(HOME_PATH);
+  }, [signedIn, router]);
 
   // 인증번호 유효시간·재발송 대기시간 카운트다운
   const ticking = expiresIn > 0 || cooldown > 0;
   useEffect(() => {
     if (!ticking) return;
-    const id = window.setInterval(() => {
-      setExpiresIn((s) => Math.max(0, s - 1));
-      setCooldown((s) => Math.max(0, s - 1));
-    }, 1000);
-    return () => window.clearInterval(id);
+    const update = () => setClock(Date.now());
+    const id = window.setInterval(update, 1000);
+    window.addEventListener("focus", update);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", update);
+    };
   }, [ticking]);
 
   const codeSent = sentTo !== null;
@@ -79,9 +107,81 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
       setCode("");
       setCodeError(null);
       setLocked(false);
-      setExpiresIn(0);
+      verificationId.current = null;
+      setExpiresAt(0);
       // 재발송 제한은 번호별로 서버가 판단하므로 새 번호는 바로 요청할 수 있습니다.
-      setCooldown(0);
+      setResendAt(0);
+    }
+  }
+
+  function updateRetryTime(seconds: number) {
+    const now = Date.now();
+    setClock(now);
+    setResendAt(now + seconds * 1000);
+  }
+
+  function handleLiveError(error: unknown, stage: "send" | "verify") {
+    const code = error instanceof ApiError ? error.code : "";
+    const details =
+      error instanceof ApiError &&
+      error.result &&
+      typeof error.result === "object"
+        ? (error.result as Record<string, unknown>)
+        : {};
+    if (Object.hasOwn(blockedCodes, code)) {
+      setBlocked({
+        status: blockedCodes[code],
+        rejectReason:
+          typeof details.rejectionReason === "string"
+            ? details.rejectionReason
+            : undefined,
+      });
+      return;
+    }
+    const retry =
+      typeof details.retryAfterSeconds === "number" &&
+      Number.isFinite(details.retryAfterSeconds) &&
+      details.retryAfterSeconds > 0
+        ? details.retryAfterSeconds
+        : undefined;
+    if (retry) updateRetryTime(retry);
+    if (stage === "send") {
+      setPhoneError(
+        authErrorMessage(
+          code === "VERIFICATION_RESEND_TOO_SOON" ||
+            code === "VERIFICATION_SEND_LIMITED" ||
+            code === "TOO_MANY_REQUESTS"
+            ? "SEND_LIMIT"
+            : "SEND_FAILED",
+          { retryAfterSec: retry },
+        ),
+      );
+      return;
+    }
+    if (code === "VERIFICATION_CODE_MISMATCH") {
+      setCodeError(
+        authErrorMessage("CODE_MISMATCH", {
+          remainingAttempts:
+            typeof details.attemptsLeft === "number"
+              ? details.attemptsLeft
+              : undefined,
+        }),
+      );
+    } else if (code === "VERIFICATION_ATTEMPTS_EXCEEDED") {
+      setLocked(true);
+      setExpiresAt(0);
+      setCodeError(authErrorMessage("ATTEMPT_LIMIT", { retryAfterSec: retry }));
+    } else if (
+      [
+        "VERIFICATION_EXPIRED",
+        "VERIFICATION_ALREADY_USED",
+        "VERIFICATION_NOT_FOUND",
+      ].includes(code)
+    ) {
+      setExpiresAt(0);
+      setCodeError(authErrorMessage("CODE_EXPIRED"));
+    } else {
+      setCodeError("로그인하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.");
     }
   }
 
@@ -96,6 +196,19 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
     setSending(true);
     setPhoneError(null);
     try {
+      if (!preview) {
+        const result = await requestOwnerVerification(requested);
+        if (id !== requestId.current) return;
+        verificationId.current = result.verificationId;
+        setSentTo(requested);
+        setCode("");
+        setCodeError(null);
+        setLocked(false);
+        setClock(Date.now());
+        setExpiresAt(Date.parse(result.expiresAt));
+        setResendAt(Date.parse(result.resendAvailableAt));
+        return;
+      }
       const res = await requestVerificationCode(requested);
       if (id !== requestId.current) return;
       if (res.ok) {
@@ -103,8 +216,10 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
         setCode("");
         setCodeError(null);
         setLocked(false);
-        setExpiresIn(res.expiresInSec);
-        setCooldown(res.resendAfterSec);
+        const now = Date.now();
+        setClock(now);
+        setExpiresAt(now + res.expiresInSec * 1000);
+        setResendAt(now + res.resendAfterSec * 1000);
       } else if ("status" in res) {
         setBlocked({ status: res.status, rejectReason: res.rejectReason });
       } else {
@@ -112,12 +227,13 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
           authErrorMessage(res.code, { retryAfterSec: res.retryAfterSec }),
         );
         if (res.code === "SEND_LIMIT" && res.retryAfterSec) {
-          setCooldown(res.retryAfterSec);
+          updateRetryTime(res.retryAfterSec);
         }
       }
-    } catch {
+    } catch (error) {
       if (id === requestId.current) {
-        setPhoneError(authErrorMessage("SEND_FAILED"));
+        if (preview) setPhoneError(authErrorMessage("SEND_FAILED"));
+        else handleLiveError(error, "send");
       }
     } finally {
       setSending(false);
@@ -131,6 +247,24 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
     setVerifying(true);
     setCodeError(null);
     try {
+      if (!preview) {
+        if (verificationId.current === null) return;
+        const result = await confirmOwnerVerification(
+          verificationId.current,
+          code,
+        );
+        if (id !== requestId.current) return;
+        saveLiveSession({
+          accessToken: result.accessToken,
+          expiresAt: Date.parse(result.expiresAt),
+          businessName: result.owner.businessName,
+          loginPhone: sentTo,
+          name: "",
+          businessPhone: "",
+        });
+        router.replace(HOME_PATH);
+        return;
+      }
       const res = await verifyCode(sentTo, code);
       if (id !== requestId.current) return;
       if (res.result === "SIGNED_IN") {
@@ -150,13 +284,14 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
       );
       if (res.code === "ATTEMPT_LIMIT") {
         setLocked(true);
-        setExpiresIn(0);
-        if (res.retryAfterSec) setCooldown(res.retryAfterSec);
+        setExpiresAt(0);
+        if (res.retryAfterSec) updateRetryTime(res.retryAfterSec);
       }
-      if (res.code === "CODE_EXPIRED") setExpiresIn(0);
-    } catch {
+      if (res.code === "CODE_EXPIRED") setExpiresAt(0);
+    } catch (error) {
       if (id === requestId.current) {
-        setCodeError("연결을 확인한 뒤 다시 시도해 주세요.");
+        if (preview) setCodeError("연결을 확인한 뒤 다시 시도해 주세요.");
+        else handleLiveError(error, "verify");
       }
     } finally {
       setVerifying(false);
@@ -172,10 +307,12 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
     setCodeError(null);
     setPhoneError(null);
     setLocked(false);
-    setExpiresIn(0);
+    verificationId.current = null;
+    setExpiresAt(0);
+    setResendAt(0);
   }
 
-  if (session.status === "loading" || session.status === "active") {
+  if (session.status === "loading" || signedIn) {
     return (
       <main className={styles.page}>
         <p className={styles.hint} aria-live="polite">
@@ -225,6 +362,11 @@ export function OwnerLoginFlow({ notice }: { notice?: LoginNotice }) {
   return (
     <main className={styles.page}>
       <header>
+        {preview && (
+          <p className={styles.previewNotice}>
+            화면 확인용 · 문자는 발송하지 않아요.
+          </p>
+        )}
         <p className={styles.brand}>일로 · 현장비서 덕구</p>
         <h1 className={styles.title}>사장님 로그인</h1>
         <p className={styles.description}>

@@ -1,8 +1,13 @@
 "use client";
 
+import type { InquirySource } from "@/lib/owner-inquiries/source";
+
 import Link from "next/link";
 import { OwnerGate } from "../../../_components/owner-gate";
-import { OwnerPhoto } from "../../../_components/owner-photo";
+import {
+  OwnerPhoto,
+  PhotoRefreshContext,
+} from "../../../_components/owner-photo";
 import auth from "../../../_components/owner-auth.module.css";
 import styles from "../../../_components/owner-inquiries.module.css";
 import { DetailError, DetailSkeleton } from "../detail-states";
@@ -16,21 +21,22 @@ const SENDER_LABEL = { CUSTOMER: "고객", DUKGU: "덕구", OWNER: "사장님" }
 export function InquiryChatView({ inquiryId }: { inquiryId: string }) {
   return (
     <OwnerGate screenName="고객과 대화">
-      {({ businessId }) => (
-        <ChatBody businessId={businessId} inquiryId={inquiryId} />
-      )}
+      {({ source }) => <ChatBody source={source} inquiryId={inquiryId} />}
     </OwnerGate>
   );
 }
 
 function ChatBody({
-  businessId,
+  source,
   inquiryId,
 }: {
-  businessId: string;
+  source: InquirySource;
   inquiryId: string;
 }) {
-  const { result, loadedAt, reload } = useInquiryDetail(businessId, inquiryId);
+  const { result, loadedAt, reload, refresh } = useInquiryDetail(
+    source,
+    inquiryId,
+  );
 
   return (
     <main className={auth.page}>
@@ -58,7 +64,9 @@ function ChatBody({
       ) : !result.ok ? (
         <DetailError code={result.code} onRetry={() => void reload()} />
       ) : (
-        <ChatContent inquiry={result.data} now={loadedAt} />
+        <PhotoRefreshContext.Provider value={() => void refresh()}>
+          <ChatContent inquiry={result.data} now={loadedAt} />
+        </PhotoRefreshContext.Provider>
       )}
     </main>
   );

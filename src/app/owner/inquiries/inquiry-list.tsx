@@ -7,7 +7,10 @@ import { OwnerTabBar } from "../_components/owner-tab-bar";
 import { StatusPanel } from "../_components/status-panel";
 import auth from "../_components/owner-auth.module.css";
 import styles from "../_components/owner-inquiries.module.css";
-import { fetchInquiries } from "@/lib/owner-inquiries/mock-api";
+import {
+  loadInquiries,
+  type InquirySource,
+} from "@/lib/owner-inquiries/source";
 import {
   OWNER_CHECK_REASON_LABEL,
   STATUS_LABEL,
@@ -40,12 +43,12 @@ const GROUP_ORDER: { key: InquiryGroup; title: string }[] = [
 export function InquiryList() {
   return (
     <OwnerGate screenName="접수함">
-      {({ businessId }) => <InquiryListBody businessId={businessId} />}
+      {({ source }) => <InquiryListBody source={source} />}
     </OwnerGate>
   );
 }
 
-function InquiryListBody({ businessId }: { businessId: string }) {
+function InquiryListBody({ source }: { source: InquirySource }) {
   const [tab, setTab] = useState<InquiryTab>("ALL");
   const [result, setResult] = useState<LoadResult<InquirySummary[]> | null>(
     null,
@@ -58,12 +61,12 @@ function InquiryListBody({ businessId }: { businessId: string }) {
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setResult(null);
-    const res = await fetchInquiries(businessId);
+    const res = await loadInquiries(source);
     if (id === requestId.current) {
       setLoadedAt(Date.now());
       setResult(res);
     }
-  }, [businessId]);
+  }, [source]);
 
   useEffect(() => {
     // 화면에 들어오면 한 번 불러옵니다.

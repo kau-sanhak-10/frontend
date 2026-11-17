@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { StatusPanel } from "../_components/status-panel";
+import { useLoad } from "../_components/use-load";
 import styles from "../_components/owner-auth.module.css";
+import { ApiError } from "@/lib/api";
+import { getOwnerMe, logoutOwner, type OwnerMe } from "@/lib/owner-auth/api";
 import { formatPhone, maskPhone } from "@/lib/owner-auth/phone";
 import {
   clearSession,
@@ -12,6 +15,7 @@ import {
   type OwnerSession,
 } from "@/lib/owner-auth/session";
 import { useOwnerSession } from "@/lib/owner-auth/use-owner-session";
+import type { LoadResult } from "@/lib/owner-inquiries/types";
 
 const NAME_MAX = 20;
 
@@ -53,6 +57,9 @@ export function OwnerAccount() {
     );
   }
 
+  if (session.session.accessToken)
+    return <LiveAccount token={session.session.accessToken} />;
+
   return (
     <AccountDetails
       key={session.session.loginPhone}
@@ -62,6 +69,89 @@ export function OwnerAccount() {
         router.replace("/owner/login?reason=logout");
       }}
     />
+  );
+}
+
+function LiveAccount({ token }: { token: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const expire = useCallback(() => {
+    clearSession();
+    router.replace("/owner/login?reason=expired");
+  }, [router]);
+  const load = useCallback(async (): Promise<LoadResult<OwnerMe>> => {
+    try {
+      return { ok: true, data: await getOwnerMe(token) };
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) expire();
+      return { ok: false, code: "LOAD_FAILED" };
+    }
+  }, [token, expire]);
+  const { result, reload } = useLoad(load);
+
+  async function logout() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await logoutOwner(token);
+      clearSession();
+      router.replace("/owner/login?reason=logout");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) expire();
+      else
+        setError("로그아웃하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className={styles.page}>
+      <header className={styles.header}>
+        <Link href="/owner" className={styles.backLink} aria-label="뒤로 가기">
+          ‹
+        </Link>
+        <h1 className={styles.headerTitle}>내 계정</h1>
+      </header>
+      {!result ? (
+        <p role="status">계정 정보를 불러오고 있어요…</p>
+      ) : result.ok ? (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>{result.data.businessName}</h2>
+          {result.data.ownerName && <p>{result.data.ownerName}</p>}
+          <p>로그인 번호 {maskPhone(result.data.phone)}</p>
+        </section>
+      ) : (
+        <StatusPanel
+          title="계정 정보를 불러오지 못했어요."
+          body="잠시 후 다시 시도해 주세요."
+          tone="error"
+        >
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => void reload()}
+          >
+            다시 시도
+          </button>
+        </StatusPanel>
+      )}
+      {error && (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        className={`${styles.button} ${styles.secondary} ${styles.full}`}
+        disabled={busy}
+        onClick={() => void logout()}
+      >
+        로그아웃
+      </button>
+    </main>
   );
 }
 
