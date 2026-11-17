@@ -213,6 +213,67 @@ try {
   await page.reload();
   await page.getByRole("link", { name: "내 계정" }).click();
   await page.getByText("로그인 번호 010-••••-0000").waitFor();
+  const manifest = await (
+    await page.request.get(`${base}/manifest.webmanifest`)
+  ).json();
+  assert.equal(manifest.start_url, "/owner");
+  assert.equal(manifest.display, "standalone");
+  const installGuide = page
+    .locator("details")
+    .filter({ hasText: "홈 화면에 일로 추가" });
+  const installDetails = installGuide.locator("summary");
+  assert.equal(
+    await installGuide.getByText("iPhone Safari").isVisible(),
+    false,
+  );
+  await installDetails.press("Enter");
+  await installGuide.getByText("iPhone Safari").waitFor();
+  await installGuide.getByText("Android Chrome").waitFor();
+  await installGuide.getByText(/알림 권한은 앱 설치와 별개/).waitFor();
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+    );
+    if (width !== 320 && process.env.OWNER_QA_SCREENSHOTS)
+      await page.screenshot({
+        path: `${process.env.OWNER_QA_SCREENSHOTS}/install-${width}.png`,
+        fullPage: true,
+      });
+  }
+  await installDetails.press("Enter");
+  assert.equal(
+    await installGuide.getByText("Android Chrome").isVisible(),
+    false,
+  );
+  // Chromium CDP does not emulate installed display-mode. Verify the shipped
+  // standalone rule and force it to match this test page for the rendering check.
+  assert.equal(
+    await installGuide.evaluate((guide) => {
+      const rule = Array.from(document.styleSheets)
+        .flatMap((sheet) => Array.from(sheet.cssRules))
+        .find(
+          (rule) =>
+            rule instanceof CSSMediaRule &&
+            rule.conditionText.replace(/\s/g, "") ===
+              "(display-mode:standalone)" &&
+            Array.from(rule.cssRules).some(
+              (child) =>
+                child instanceof CSSStyleRule &&
+                guide.matches(child.selectorText) &&
+                child.style.display === "none",
+            ),
+        );
+      if (!rule) return false;
+      rule.media.mediaText = "all";
+      return true;
+    }),
+    true,
+  );
+  assert.equal(await installGuide.isVisible(), false);
   const logout = page.getByRole("button", { name: "로그아웃" });
   await logout.click();
   await page.getByText(/로그아웃하지 못했어요/).waitFor();
@@ -224,7 +285,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: owner verification, inquiry details and conflict evidence, session reload, and logout",
+    "PASS: owner verification, inquiry evidence, PWA start URL, install guide and standalone state, session reload, and logout",
   );
 } finally {
   await browser.close();

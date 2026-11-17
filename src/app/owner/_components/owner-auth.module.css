@@ -314,3 +314,20 @@
   font-size: 0.875rem;
   white-space: pre-line;
 }
+.installGuide summary {
+  min-height: 44px;
+  padding-block: 10px;
+  cursor: pointer;
+}
+
+.installGuide > p {
+  margin-block: 0 12px;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+@media (display-mode: standalone) {
+  .installGuide {
+    display: none;
+  }
+}
