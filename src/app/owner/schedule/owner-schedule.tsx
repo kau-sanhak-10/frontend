@@ -73,7 +73,19 @@ function weekStart(date: string) {
 export function OwnerSchedule() {
   return (
     <OwnerGate screenName="일정">
-      {({ businessId }) => <Schedule businessId={businessId} />}
+      {({ source }) =>
+        source.kind === "mock" ? (
+          <Schedule businessId={source.businessId} />
+        ) : (
+          <main className={auth.page}>
+            <StatusPanel
+              title="일정 연결을 준비하고 있어요."
+              body="실제 방문 일정은 서버 연결 후 확인할 수 있어요."
+            />
+            <OwnerTabBar current="schedule" />
+          </main>
+        )
+      }
     </OwnerGate>
   );
 }

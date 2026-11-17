@@ -170,9 +170,36 @@ try {
   await page
     .getByRole("heading", { name: "일정을 불러오지 못했어요." })
     .waitFor();
+
+  // A live session must never mount the local-only schedule or allow mock writes.
+  await page.evaluate(() => {
+    window.sessionStorage.setItem(
+      "ilro.owner.session",
+      JSON.stringify({
+        accessToken: "own_schedule_test_fixture",
+        expiresAt: Date.now() + 60_000,
+        name: "일정 테스트",
+        loginPhone: "01000000000",
+        businessName: "테스트 업체",
+        businessPhone: "01000000000",
+      }),
+    );
+  });
+  await page.goto(`${base}/owner/schedule`);
+  await page
+    .getByRole("heading", { name: "일정 연결을 준비하고 있어요." })
+    .waitFor();
+  assert.equal(
+    await page.getByRole("region", { name: "날짜별 일정" }).count(),
+    0,
+  );
+  assert.equal(
+    await page.getByRole("button", { name: "일정 추가" }).count(),
+    0,
+  );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: 일정 권한, 시간 충돌, 빈 일정·조회 실패, 영업시간 밖 확인, 기존 예약 유지, 취소·정정 사유, 차단·해제, 320·390·1280px",
+    "PASS: 일정 권한, 실계정에서 목업 차단, 시간 충돌, 빈 일정·조회 실패, 영업시간 밖 확인, 기존 예약 유지, 취소·정정 사유, 차단·해제, 320·390·1280px",
   );
 } finally {
   await browser.close();
