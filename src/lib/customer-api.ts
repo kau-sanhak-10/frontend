@@ -5,7 +5,13 @@ import type {
   IntakeField,
   SendCustomerInput,
 } from "./customer-consultation.ts";
-import type { IntakeBusiness, VisitInfo } from "./customer-intake.ts";
+import {
+  emptyVisitInfo,
+  validateVisitInfo,
+  VisitInputError,
+  type IntakeBusiness,
+  type VisitInfo,
+} from "./customer-intake.ts";
 
 const categoryNames: Record<string, string> = {
   INSPECTION: "점검",
@@ -71,6 +77,106 @@ export async function getCustomerInquiryVersion(
 ) {
   const { path, headers } = inquiryAccess(inquiryId, token);
   return (await readInquiry(path, inquiryId, { headers, signal })).version;
+}
+
+export async function getCustomerVisitInfo(
+  inquiryId: number,
+  token: string,
+  signal?: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const data = await readInquiry(path, inquiryId, { headers, signal });
+  const raw = data.visitInfo;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    throw new Error("Invalid visit information response");
+  const value = raw as Record<string, unknown>;
+  if (
+    ![
+      "name",
+      "phone",
+      "address",
+      "addressDetail",
+      "accessNote",
+      "workCategory",
+    ].every((key) => value[key] === null || typeof value[key] === "string")
+  )
+    throw new Error("Invalid visit information response");
+  const coordinates =
+    typeof value.lat === "number" &&
+    Number.isFinite(value.lat) &&
+    Math.abs(value.lat) <= 90 &&
+    typeof value.lng === "number" &&
+    Number.isFinite(value.lng) &&
+    Math.abs(value.lng) <= 180
+      ? { lat: value.lat, lng: value.lng }
+      : null;
+  return {
+    version: data.version,
+    coordinates,
+    visit: {
+      ...emptyVisitInfo,
+      name: (value.name as string | null) ?? "",
+      phone: (value.phone as string | null) ?? "",
+      address: (value.address as string | null) ?? "",
+      addressDetail: (value.addressDetail as string | null) ?? "",
+      accessNote: (value.accessNote as string | null) ?? "",
+      workTypeId: (value.workCategory as string | null) ?? "",
+    },
+  };
+}
+
+export function visitSaveError(error: unknown): VisitInputError {
+  if (error instanceof ApiError) {
+    if (error.code === "INVALID_INPUT" && Array.isArray(error.result)) {
+      const fields: Partial<Record<keyof VisitInfo, string>> = {};
+      for (const row of error.result) {
+        if (
+          !row ||
+          typeof row.field !== "string" ||
+          typeof row.reason !== "string"
+        )
+          continue;
+        const key = row.field === "workCategory" ? "workTypeId" : row.field;
+        if (Object.hasOwn(emptyVisitInfo, key))
+          fields[key as keyof VisitInfo] = row.reason;
+      }
+      return new VisitInputError(
+        "표시된 항목을 확인해 주세요. 다른 입력은 그대로 있어요.",
+        fields,
+      );
+    }
+    if (error.code === "INQUIRY_VERSION_CONFLICT")
+      return new VisitInputError(
+        "접수 내용이 바뀌었어요. 최신 내용을 확인한 뒤 다시 저장해 주세요.",
+      );
+    if (error.code === "VISIT_INFO_OWNER_CONFIRMED")
+      return new VisitInputError(
+        "사장님이 확인한 방문정보예요. 변경할 내용은 상담으로 알려주세요.",
+      );
+    if (error.code === "RESERVATION_CHANGE_REQUIRED")
+      return new VisitInputError(
+        "예약에 영향을 주는 변경은 예약 변경 절차가 필요해요. 기존 예약은 그대로예요.",
+      );
+    if (
+      error.code === "ADDRESS_NOT_FOUND" ||
+      error.code === "OUT_OF_SERVICE_AREA"
+    )
+      return new VisitInputError("방문 주소를 확인해 주세요.", {
+        address:
+          error.code === "ADDRESS_NOT_FOUND"
+            ? "주소를 확인하지 못했어요."
+            : "업체의 방문 가능 지역이 아니에요.",
+      });
+    if ([401, 403, 404].includes(error.status))
+      return new VisitInputError(
+        "이 상담에 더 이상 저장할 수 없어요. 입력한 내용은 남겨 뒀어요.",
+      );
+  }
+  return error instanceof VisitInputError
+    ? error
+    : new VisitInputError(
+        "저장 결과를 확인하지 못했어요. 입력한 내용은 남겨 뒀어요.",
+      );
 }
 
 export const customerFieldSpecs = {
@@ -271,6 +377,12 @@ export async function saveCustomerVisitInfo(
 ) {
   const { path, headers } = inquiryAccess(inquiryId, token);
   const { lat, lng } = coordinates;
+  const errors = validateVisitInfo(
+    visit,
+    Object.entries(categoryNames).map(([id, name]) => ({ id, name })),
+  );
+  if (Object.keys(errors).length)
+    throw new VisitInputError("입력한 방문정보를 확인해 주세요.", errors);
   // 좌표는 확인된 기본주소와 함께 전달한다. 좌표가 없다고 임의 위치를 보내지 않는다.
   if (
     !Number.isSafeInteger(version) ||

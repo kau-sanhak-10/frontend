@@ -143,6 +143,12 @@ function LiveAccount({ token }: { token: string }) {
           {error}
         </p>
       )}
+      <Link
+        href="/owner/settings"
+        className={`${styles.button} ${styles.secondary} ${styles.full}`}
+      >
+        업체 설정
+      </Link>
       <button
         type="button"
         className={`${styles.button} ${styles.secondary} ${styles.full}`}

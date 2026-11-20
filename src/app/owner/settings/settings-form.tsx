@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import {
   type SettingsData,
@@ -66,13 +67,16 @@ function Field({
 export default function SettingsForm({
   initialData,
   onSave,
+  onReload,
   preview = false,
 }: {
   initialData: SettingsData;
   onSave: (
     section: SettingsSection,
     data: SettingsData,
+    saved: SettingsData,
   ) => Promise<SettingsData>;
+  onReload?: () => Promise<SettingsData>;
   preview?: boolean;
 }) {
   const [saved, setSaved] = useState(initialData);
@@ -86,6 +90,7 @@ export default function SettingsForm({
   const [errors, setErrors] = useState<SettingErrors>({});
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [needsReload, setNeedsReload] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const lock = useRef(false);
@@ -119,8 +124,35 @@ export default function SettingsForm({
     setErrors({});
     setNotice("이 항목의 변경을 취소했어요.");
   }
+  async function reconcile() {
+    setNeedsReload(true);
+    try {
+      const current = await onReload!();
+      if (!mounted.current) return;
+      setDraft((values) => refreshSettingsDraft(null, values, saved, current));
+      setSaved(current);
+      setNeedsReload(false);
+      setNotice("서버의 현재 상태를 확인했어요. 작성하던 내용은 유지했어요.");
+    } catch {
+      if (mounted.current)
+        setNotice(
+          "서버 상태를 아직 확인하지 못했어요. 다시 확인한 뒤 저장해 주세요.",
+        );
+    }
+  }
   async function save(form: HTMLFormElement) {
     if (!section || lock.current) return;
+    if (needsReload) {
+      lock.current = true;
+      setBusy(true);
+      try {
+        await reconcile();
+      } finally {
+        lock.current = false;
+        if (mounted.current) setBusy(false);
+      }
+      return;
+    }
     const candidate =
       section === "business"
         ? {
@@ -145,7 +177,9 @@ export default function SettingsForm({
             ? validateBooking(draft.booking)
             : section === "work"
               ? validateWorkTypes(draft.workTypes)
-              : candidate.booking.autoBookingEnabled && autoBookingError
+              : candidate.booking.autoBookingEnabled &&
+                  !saved.booking.autoBookingEnabled &&
+                  autoBookingError
                 ? { auto: autoBookingError }
                 : {};
     setErrors(found);
@@ -159,7 +193,7 @@ export default function SettingsForm({
     lock.current = true;
     setBusy(true);
     try {
-      const result = await onSave(section, candidate);
+      const result = await onSave(section, candidate, saved);
       if (!mounted.current) return;
       setSaved(result);
       setDraft((d) => refreshSettingsDraft(section, d, saved, result));
@@ -168,6 +202,7 @@ export default function SettingsForm({
       );
       setConfirmPause(false);
     } catch (e) {
+      if (section === "intake" && onReload) await reconcile();
       if (mounted.current)
         setErrors({
           save:
@@ -212,7 +247,7 @@ export default function SettingsForm({
         </p>
       )}
       <header className={common.header}>
-        {section && (
+        {section ? (
           <button
             type="button"
             className={common.backLink}
@@ -227,7 +262,20 @@ export default function SettingsForm({
               height={22}
             />
           </button>
-        )}
+        ) : !preview ? (
+          <Link
+            href="/owner/account"
+            className={common.backLink}
+            aria-label="내 계정으로"
+          >
+            <Image
+              src="/owner/settings-back.svg"
+              alt=""
+              width={22}
+              height={22}
+            />
+          </Link>
+        ) : null}
         <h1 ref={heading} tabIndex={-1} className={common.headerTitle}>
           {section ? sections[section] : "업체 설정"}
         </h1>
@@ -291,7 +339,7 @@ export default function SettingsForm({
             void save(e.currentTarget);
           }}
         >
-          <fieldset disabled={busy} className={styles.fields}>
+          <fieldset disabled={busy || needsReload} className={styles.fields}>
             {section === "business" && (
               <>
                 <h2 className={styles.sectionTitle}>
@@ -398,20 +446,22 @@ export default function SettingsForm({
                     {draft.serviceAreas.map((a) => (
                       <li key={a.regionCode}>
                         <span>{a.regionName}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraft({
-                              ...draft,
-                              serviceAreas: draft.serviceAreas.filter(
-                                (v) => v.regionCode !== a.regionCode,
-                              ),
-                            })
-                          }
-                          aria-label={`${a.regionName} 삭제`}
-                        >
-                          삭제
-                        </button>
+                        {preview && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                serviceAreas: draft.serviceAreas.filter(
+                                  (v) => v.regionCode !== a.regionCode,
+                                ),
+                              })
+                            }
+                            aria-label={`${a.regionName} 삭제`}
+                          >
+                            삭제
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -716,6 +766,11 @@ export default function SettingsForm({
             )}
             {section === "intake" && (
               <>
+                {!preview && (
+                  <p className={common.info}>
+                    자동 예약과 신규 접수는 하나씩 변경하고 저장해 주세요.
+                  </p>
+                )}
                 <section className={styles.work}>
                   <h2 className={styles.sectionTitle}>자동 예약</h2>
                   <p className={common.hint}>
@@ -726,6 +781,9 @@ export default function SettingsForm({
                     <input
                       type="checkbox"
                       checked={draft.booking.autoBookingEnabled}
+                      disabled={
+                        !preview && draft.intakePaused !== saved.intakePaused
+                      }
                       onChange={(e) => {
                         if (e.target.checked && autoBookingError) {
                           setErrors({ auto: autoBookingError });
@@ -763,6 +821,11 @@ export default function SettingsForm({
                     <input
                       type="checkbox"
                       checked={draft.intakePaused}
+                      disabled={
+                        !preview &&
+                        draft.booking.autoBookingEnabled !==
+                          saved.booking.autoBookingEnabled
+                      }
                       onChange={(e) => {
                         setConfirmPause(e.target.checked);
                         setDraft({ ...draft, intakePaused: e.target.checked });
@@ -796,7 +859,7 @@ export default function SettingsForm({
             <button
               type="button"
               className={`${common.button} ${common.secondary}`}
-              disabled={busy || !selectedDirty}
+              disabled={busy || needsReload || !selectedDirty}
               onClick={cancel}
             >
               취소
@@ -804,9 +867,13 @@ export default function SettingsForm({
             <button
               className={`${common.button} ${styles.primary}`}
               type="submit"
-              disabled={busy || !selectedDirty}
+              disabled={busy || (!selectedDirty && !needsReload)}
             >
-              {busy ? "저장 중…" : "변경사항 저장"}
+              {busy
+                ? "처리 중…"
+                : needsReload
+                  ? "서버 상태 다시 확인"
+                  : "변경사항 저장"}
             </button>
           </footer>
         </form>
