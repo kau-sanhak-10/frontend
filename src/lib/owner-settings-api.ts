@@ -8,6 +8,8 @@ import {
   type BookingSettings,
   type WorkType,
   type ServiceArea,
+  type SettingsData,
+  type SettingsSection,
 } from "./owner-settings.ts";
 
 const object = (v: unknown): v is Record<string, unknown> =>
@@ -213,4 +215,54 @@ export function setIntakePaused(
     { intakePaused },
     signal,
   );
+}
+
+export async function saveOwnerSettingsSection(
+  token: string,
+  section: SettingsSection,
+  saved: SettingsData,
+  draft: SettingsData,
+  signal?: AbortSignal,
+): Promise<SettingsData> {
+  switch (section) {
+    case "business":
+      return {
+        ...saved,
+        business: await saveBusiness(token, draft.business, signal),
+      };
+    case "hours":
+      return {
+        ...saved,
+        booking: await saveBookingSettings(token, draft.booking, signal),
+      };
+    case "work": {
+      const { workTypes } = await saveWorkTypes(token, draft.workTypes, signal);
+      return { ...saved, workTypes };
+    }
+    case "regions":
+      throw new Error("지역 검색이 연결되면 방문지역을 바꿀 수 있어요.");
+    case "intake": {
+      const auto =
+        draft.booking.autoBookingEnabled !== saved.booking.autoBookingEnabled;
+      const pause = draft.intakePaused !== saved.intakePaused;
+      if (auto && pause)
+        throw new Error(
+          "자동 예약과 신규 접수는 한 번에 하나씩 저장해 주세요.",
+        );
+      if (auto) {
+        const value = await setAutoBooking(
+          token,
+          draft.booking.autoBookingEnabled,
+          signal,
+        );
+        return { ...saved, booking: { ...saved.booking, ...value } };
+      }
+      return pause
+        ? {
+            ...saved,
+            ...(await setIntakePaused(token, draft.intakePaused, signal)),
+          }
+        : saved;
+    }
+  }
 }

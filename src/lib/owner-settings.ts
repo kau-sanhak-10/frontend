@@ -93,11 +93,56 @@ export function isSettingsSectionDirty(
 }
 
 export function refreshSettingsDraft(
-  section: SettingsSection,
+  section: SettingsSection | null,
   draft: SettingsData,
   previous: SettingsData,
   saved: SettingsData,
 ): SettingsData {
+  // null은 저장 성공/취소가 아니라 저장 결과 재조회: 실제 편집한 필드만 보존한다.
+  if (section === null) {
+    const keepEdits = <T extends object>(
+      values: T,
+      before: T,
+      current: T,
+    ): T => {
+      const result = { ...current };
+      for (const key of Object.keys(values) as (keyof T)[])
+        if (changed(values[key], before[key])) result[key] = values[key];
+      return result;
+    };
+    // ponytail: 요일 7개·고정 작업 종류만 find로 병합. 동적 대량 목록이면 키별 Map으로 전환한다.
+    return {
+      business: keepEdits(draft.business, previous.business, saved.business),
+      booking: {
+        ...keepEdits(draft.booking, previous.booking, saved.booking),
+        businessHours: saved.booking.businessHours.map((hour) => {
+          const before = previous.booking.businessHours.find(
+            (h) => h.dayOfWeek === hour.dayOfWeek,
+          );
+          const values = draft.booking.businessHours.find(
+            (h) => h.dayOfWeek === hour.dayOfWeek,
+          );
+          return before && values ? keepEdits(values, before, hour) : hour;
+        }),
+      },
+      workTypes: saved.workTypes.map((work) => {
+        const before = previous.workTypes.find(
+          (w) => w.workCategory === work.workCategory,
+        );
+        const values = draft.workTypes.find(
+          (w) => w.workCategory === work.workCategory,
+        );
+        return before && values ? keepEdits(values, before, work) : work;
+      }),
+      serviceAreas: changed(draft.serviceAreas, previous.serviceAreas)
+        ? draft.serviceAreas
+        : saved.serviceAreas,
+      intakePaused:
+        draft.intakePaused !== previous.intakePaused
+          ? draft.intakePaused
+          : saved.intakePaused,
+    };
+  }
   const keep = (other: SettingsSection) =>
     section !== other && isSettingsSectionDirty(other, draft, previous);
   return {
