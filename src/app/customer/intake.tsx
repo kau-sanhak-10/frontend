@@ -8,6 +8,7 @@ import {
   intakeStatusCopy,
   validateVisitInfo,
   visitAccessNoteMaxLength,
+  VisitInputError,
   type IntakeBusiness,
   type IntakeStatus,
   type VisitErrors,
@@ -34,6 +35,8 @@ type Props = {
   visitDemo?: boolean;
   preview?: boolean;
   previewFailure?: "start" | "visit" | "address" | "region";
+  addressReadOnly?: boolean;
+  addressHint?: string;
 };
 
 // 실제 네트워크·문의 토큰은 상위 연결 화면(FE-08/20)의 책임이다.
@@ -52,6 +55,8 @@ export default function CustomerIntake({
   visitDemo = false,
   preview = false,
   previewFailure,
+  addressReadOnly = false,
+  addressHint,
 }: Props) {
   const [step, setStep] = useState<Step>(initialStep);
   const [privacy, setPrivacy] = useState(false);
@@ -149,10 +154,19 @@ export default function CustomerIntake({
           phone: visit.phone.replace(/[\s-]/g, ""),
           address: visit.address.trim(),
         });
-    } catch {
-      setRequestError(
-        "방문정보를 보내지 못했어요. 입력한 내용은 그대로 있어요. 다시 시도해 주세요.",
-      );
+    } catch (error) {
+      if (error instanceof VisitInputError) {
+        setErrors(error.fields);
+        setRequestError(error.message);
+        form.current
+          ?.querySelector<HTMLInputElement>(
+            `[name="${Object.keys(error.fields)[0]}"]`,
+          )
+          ?.focus();
+      } else
+        setRequestError(
+          "방문정보를 보내지 못했어요. 입력한 내용은 그대로 있어요. 다시 시도해 주세요.",
+        );
     } finally {
       busy.current = false;
       setPending(false);
@@ -174,6 +188,7 @@ export default function CustomerIntake({
       placeholder?: string;
       hint?: string;
       maxLength: number;
+      readOnly?: boolean;
     },
   ) {
     return (
@@ -190,6 +205,7 @@ export default function CustomerIntake({
           autoComplete={options.autoComplete}
           maxLength={options.maxLength}
           placeholder={options.placeholder}
+          readOnly={options.readOnly}
           value={visit[key]}
           aria-invalid={Boolean(errors[key])}
           aria-required={!options.optional}
@@ -518,9 +534,15 @@ export default function CustomerIntake({
                         id="visit-workTypeId"
                         name="workTypeId"
                         value={visit.workTypeId}
-                        onChange={(e) =>
-                          setVisit({ ...visit, workTypeId: e.target.value })
+                        aria-invalid={Boolean(errors.workTypeId)}
+                        aria-describedby={
+                          errors.workTypeId ? "workTypeId-error" : undefined
                         }
+                        onChange={(e) => {
+                          setVisit({ ...visit, workTypeId: e.target.value });
+                          setErrors({ ...errors, workTypeId: undefined });
+                          setRequestError("");
+                        }}
                       >
                         <option value="">잘 모르겠어요 · 선택 안 함</option>
                         {business.workTypes.map((t) => (
@@ -529,6 +551,11 @@ export default function CustomerIntake({
                           </option>
                         ))}
                       </select>
+                      {errors.workTypeId && (
+                        <p id="workTypeId-error" className={styles.error}>
+                          {errors.workTypeId}
+                        </p>
+                      )}
                     </div>
                   </fieldset>
                   <fieldset className={styles.group} disabled={pending}>
@@ -537,7 +564,10 @@ export default function CustomerIntake({
                       autoComplete: "address-line1",
                       placeholder: "도로명과 건물번호 입력",
                       maxLength: 200,
-                      hint: "서비스 가능 지역은 서버 연결 후 확인해요.",
+                      readOnly: addressReadOnly,
+                      hint:
+                        addressHint ??
+                        "서비스 가능 지역은 서버 연결 후 확인해요.",
                     })}
                     {field("addressDetail", "상세 주소", {
                       optional: true,

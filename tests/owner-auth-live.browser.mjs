@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
+import { mkdir } from "node:fs/promises";
 
 const base = "http://127.0.0.1:35115";
 const api = "http://127.0.0.1:35116";
@@ -35,6 +36,21 @@ try {
     createdAt,
   };
   let logoutAttempts = 0;
+  let businessWrites = 0;
+  let business = {
+    businessName: owner.businessName,
+    contactPhone: null,
+    address: null,
+    lat: null,
+    lng: null,
+    customerNotice: null,
+    serviceDescription: null,
+  };
+  let intakePaused = false;
+  let intakeWrites = 0;
+  let reconcileFailures = 0;
+  let autoBookingEnabled = true;
+  let expectedBusinessName = "새 업체명";
   await context.route("**/*", async (route) => {
     const request = route.request();
     const { origin, pathname } = new URL(request.url());
@@ -42,7 +58,7 @@ try {
     if (origin !== api) return route.abort();
     const headers = {
       "access-control-allow-origin": base,
-      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-methods": "GET, POST, PUT, PATCH, OPTIONS",
       "access-control-allow-headers": "authorization, content-type",
     };
     if (request.method() === "OPTIONS")
@@ -79,13 +95,59 @@ try {
         });
       case "GET /api/v1/owner/me":
         assert.equal(request.headers().authorization, "Bearer own_test");
+        if (reconcileFailures-- > 0) return reply(null, 503, "UNAVAILABLE");
         return reply({
           ...owner,
           ownerName: "테스트",
           phone: "01000000000",
-          autoBookingEnabled: false,
-          intakePaused: false,
+          autoBookingEnabled,
+          intakePaused,
         });
+      case "GET /api/v1/owner/business":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply(business);
+      case "GET /api/v1/owner/booking-settings":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply({
+          businessHours: Array.from({ length: 7 }, (_, i) => ({
+            dayOfWeek: i + 1,
+            isClosed: true,
+            openTime: null,
+            closeTime: null,
+          })),
+          lunchStart: null,
+          lunchEnd: null,
+          maxDailyVisits: null,
+          bufferMinutes: 0,
+          travelMode: "CAR",
+          autoBookingEnabled,
+        });
+      case "GET /api/v1/owner/work-types":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply({ workTypes: [] });
+      case "GET /api/v1/owner/service-areas":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply({ serviceAreas: [] });
+      case "PUT /api/v1/owner/business":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        assert.deepEqual(request.postDataJSON(), {
+          ...business,
+          businessName: expectedBusinessName,
+        });
+        if (++businessWrites === 1) return reply(null, 503, "UNAVAILABLE");
+        business = request.postDataJSON();
+        return reply(business);
+      case "PATCH /api/v1/owner/intake":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        assert.equal(typeof request.postDataJSON().intakePaused, "boolean");
+        intakePaused = request.postDataJSON().intakePaused;
+        if (++intakeWrites === 1) {
+          business = { ...business, contactPhone: "0212345678" };
+          autoBookingEnabled = false;
+          reconcileFailures = 1;
+          return route.abort("failed");
+        }
+        return reply({ intakePaused });
       case "GET /api/v1/owner/inquiries":
         assert.equal(request.headers().authorization, "Bearer own_test");
         return reply({
@@ -213,6 +275,102 @@ try {
   await page.reload();
   await page.getByRole("link", { name: "내 계정" }).click();
   await page.getByText("로그인 번호 010-••••-0000").waitFor();
+  await page.getByRole("link", { name: "업체 설정" }).click();
+  await page.getByRole("button", { name: /업체정보/ }).click();
+  const businessName = page.getByLabel("업체 이름", { exact: true });
+  const saveSettings = page.getByRole("button", { name: "변경사항 저장" });
+  await businessName.fill("새 업체명");
+  await saveSettings.click();
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "입력은 남겨 뒀어요" })
+    .waitFor();
+  assert.equal(await businessName.inputValue(), "새 업체명");
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(businessWrites, 2);
+  await mkdir(".impeccable/review", { recursive: true });
+  await page.screenshot({
+    path: ".impeccable/review/settings-edit.png",
+    fullPage: true,
+  });
+  await page.reload();
+  await page.getByRole("heading", { name: "새 업체명" }).waitFor();
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+    );
+    await page.screenshot({
+      path: `.impeccable/review/settings-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: /업체정보/ }).click();
+  expectedBusinessName = "작성 중인 업체명";
+  await businessName.fill(expectedBusinessName);
+  await page.getByRole("button", { name: "설정 목록으로" }).click();
+  await page.getByRole("button", { name: /접수·예약/ }).click();
+  await page.getByRole("checkbox", { name: "신규 접수 잠시 중지" }).check();
+  assert.equal(
+    await page.getByRole("checkbox", { name: "자동 예약 켜기" }).isDisabled(),
+    true,
+  );
+  await saveSettings.click();
+  await page.getByText(/서버 상태를 아직 확인하지 못했어요/).waitFor();
+  await page.screenshot({
+    path: ".impeccable/review/settings-unknown-save.png",
+    fullPage: true,
+  });
+  assert.equal(intakePaused, true);
+  assert.equal(
+    await page
+      .getByRole("checkbox", { name: "신규 접수 잠시 중지" })
+      .isDisabled(),
+    true,
+  );
+  await page
+    .getByRole("button", { name: "서버 상태 다시 확인", exact: true })
+    .click();
+  await page.getByText(/서버의 현재 상태를 확인했어요/).waitFor();
+  const pause = page.getByRole("checkbox", { name: "신규 접수 잠시 중지" });
+  const auto = page.getByRole("checkbox", { name: "자동 예약 켜기" });
+  assert.equal(await auto.isChecked(), false);
+  assert.equal(await auto.isDisabled(), false);
+  assert.equal(await pause.isChecked(), true);
+  assert.equal(await pause.isDisabled(), false);
+  await pause.uncheck();
+  assert.equal(await saveSettings.isEnabled(), true);
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(intakePaused, false);
+  await pause.check();
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(intakePaused, true);
+  assert.equal(intakeWrites, 3);
+  await page.getByRole("button", { name: "설정 목록으로" }).click();
+  await page.getByRole("button", { name: /업체정보/ }).click();
+  assert.equal(await businessName.inputValue(), expectedBusinessName);
+  assert.equal(
+    await page.getByLabel("대표 연락처 (선택)", { exact: true }).inputValue(),
+    "0212345678",
+  );
+  await page.screenshot({
+    path: ".impeccable/review/settings-rebased-draft.png",
+    fullPage: true,
+  });
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(business.contactPhone, "0212345678");
+  assert.equal(business.businessName, expectedBusinessName);
+  assert.equal(businessWrites, 3);
+  await page.getByRole("button", { name: "설정 목록으로" }).click();
+  await page.getByRole("link", { name: "내 계정으로" }).click();
   const logout = page.getByRole("button", { name: "로그아웃" });
   await logout.click();
   await page.getByText(/로그아웃하지 못했어요/).waitFor();
@@ -224,7 +382,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: owner verification, inquiry details and conflict evidence, session reload, and logout",
+    "PASS: owner verification/details, save/retry/reload, lost-response reconciliation, untouched phone/auto-booking refresh with intentional name retention, no dual checkbox lock or stale-phone overwrite, corrective save, logout",
   );
 } finally {
   await browser.close();
