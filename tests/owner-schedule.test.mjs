@@ -52,3 +52,9 @@ test("영업시간 확인은 누락·일정 충돌·이동 검증 실패를 우�
     "INCOMPLETE",
   );
 });
+
+test("지나간 방문은 별도 확인으로도 추가할 수 없고 정확히 현재부터는 검증한다", () => {
+  const options = { required: true, now: 10, outsideConfirmed: true };
+  assert.equal(checkSchedule({ startAt: 9, endAt: 12 }, [], options), "PAST");
+  assert.equal(checkSchedule({ startAt: 10, endAt: 12 }, [], options), "READY");
+});

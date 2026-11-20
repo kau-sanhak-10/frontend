@@ -2,6 +2,7 @@ export type Slot = { startAt: number; endAt: number };
 export type ScheduleCheck =
   | "INCOMPLETE"
   | "BAD_RANGE"
+  | "PAST"
   | "CONFLICT"
   | "ROUTE_UNAVAILABLE"
   | "OUTSIDE_HOURS"
@@ -14,6 +15,7 @@ export function checkSchedule(
   occupied: Slot[],
   options: {
     required: boolean;
+    now?: number;
     routeAvailable?: boolean;
     hours?: Slot;
     outsideConfirmed?: boolean;
@@ -27,6 +29,7 @@ export function checkSchedule(
   ) {
     return "BAD_RANGE";
   }
+  if (options.now !== undefined && slot.startAt < options.now) return "PAST";
   if (
     occupied.some(
       (other) => slot.startAt < other.endAt && other.startAt < slot.endAt,

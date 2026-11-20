@@ -19,6 +19,7 @@ import styles from "./schedule.module.css";
 import { areaOf, formatClock } from "@/lib/owner-inquiries/format";
 import { fetchInquiries } from "@/lib/owner-inquiries/mock-api";
 import { emptyVisitInfo, validateVisitInfo } from "@/lib/customer-intake";
+import { createClientId } from "@/lib/customer-consultation";
 import {
   MINUTE,
   checkSchedule,
@@ -536,11 +537,13 @@ function ScheduleForm({
       setMessage("하루를 넘기는 일정은 날짜와 시간을 나누어 입력해 주세요.");
       return;
     }
-    // ponytail: this preview cannot calculate a real route; do not bypass an adjacent schedule.
+    // ponytail: preview cannot calculate routes between visits. Blocks only prevent overlaps.
     // FE-15 replaces the preview check with server-provided route and schedule validation.
     const check = checkSchedule({ startAt, endAt }, sameDay, {
       required,
-      routeAvailable: isBlock || sameDay.length === 0,
+      now: isBlock ? undefined : Date.now(),
+      routeAvailable:
+        isBlock || !sameDay.some((other) => other.kind === "visit"),
       hours: isBlock
         ? undefined
         : { startAt: toTime(day, "09:00"), endAt: toTime(day, "18:00") },
@@ -553,6 +556,7 @@ function ScheduleForm({
             Object.values(visitErrors)[0] ??
             "날짜·시간과 필수 정보를 다시 확인해 주세요.",
           BAD_RANGE: "종료 시간은 시작 시간보다 늦어야 해요.",
+          PAST: "이미 지난 시간에는 방문을 잡을 수 없어요. 다른 시간을 골라 주세요.",
           CONFLICT:
             "이 시간에 기존 일정이 있어요. 겹치지 않는 시간을 골라 주세요.",
           ROUTE_UNAVAILABLE:
@@ -584,7 +588,7 @@ function ScheduleForm({
       );
       return;
     }
-    const id = item?.id ?? crypto.randomUUID();
+    const id = item?.id ?? createClientId();
     const source = value("source");
     save(
       id,

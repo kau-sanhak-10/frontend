@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const base = process.env.OWNER_QA_BASE_URL || "http://127.0.0.1:3112";
+const productionBuild = process.argv.includes("--production");
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE_PATH
@@ -18,6 +19,10 @@ try {
   const page = await browser.newPage({
     viewport: { width: 390, height: 844 },
     timezoneId: "Asia/Seoul",
+  });
+  // HTTP previews on another device do not expose randomUUID.
+  await page.addInitScript(() => {
+    Object.defineProperty(Crypto.prototype, "randomUUID", { value: undefined });
   });
   await page.clock.setFixedTime(new Date("2026-11-11T02:00:00Z"));
   await page.route("**/*", (route) =>
@@ -126,6 +131,14 @@ try {
   await page.getByLabel("방문 주소").fill("테스트 주소");
   await page.getByLabel("시작 시간").fill("19:00");
   assert.equal(await page.getByLabel("작업시간(분)").inputValue(), "60");
+  const dateField = page.getByLabel("날짜");
+  await dateField.fill("2026-11-10");
+  await page.getByRole("button", { name: "예약 저장 미리보기" }).click();
+  await page
+    .getByRole("alert")
+    .getByText(/이미 지난 시간에는 방문을 잡을 수 없어요/)
+    .waitFor();
+  await dateField.fill("2026-11-12");
   await page.getByRole("button", { name: "예약 저장 미리보기" }).click();
   await page
     .getByRole("alert")
@@ -159,6 +172,25 @@ try {
     .getByRole("status")
     .getByText(/차단 시간을 추가/)
     .waitFor();
+  for (const start of ["14:00", "16:00"]) {
+    await page.getByRole("button", { name: "일정 추가" }).click();
+    await page.getByLabel("고객 이름").fill("새 방문");
+    await page.getByLabel("연락처").fill("01000000000");
+    await page.getByLabel("방문 주소").fill("테스트 주소");
+    await page.getByLabel("시작 시간").fill(start);
+    await page.getByRole("button", { name: "예약 저장 미리보기" }).click();
+    const outcome = page.getByText(
+      /실제 예약은 생성되지 않았어요|앞뒤 일정의 이동시간/,
+    );
+    await outcome.waitFor();
+    assert.match(
+      await outcome.innerText(),
+      start === "14:00"
+        ? /실제 예약은 생성되지 않았어요/
+        : /앞뒤 일정의 이동시간/,
+    );
+  }
+  await page.getByRole("button", { name: "일정으로 돌아가기" }).click();
   await page.getByRole("button", { name: /19:00.*개인 일정/ }).click();
   await page.getByRole("button", { name: "차단 시간 해제" }).click();
   await page
@@ -167,9 +199,13 @@ try {
     .waitFor();
 
   await page.goto(`${base}/owner/schedule?mock=fail`);
-  await page
-    .getByRole("heading", { name: "일정을 불러오지 못했어요." })
-    .waitFor();
+  const loadFailure = page.getByRole("heading", {
+    name: "일정을 불러오지 못했어요.",
+  });
+  if (productionBuild) {
+    await daily.waitFor();
+    assert.equal(await loadFailure.count(), 0);
+  } else await loadFailure.waitFor();
 
   // A live session must never mount the local-only schedule or allow mock writes.
   await page.evaluate(() => {
@@ -199,7 +235,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: 일정 권한, 실계정에서 목업 차단, 시간 충돌, 빈 일정·조회 실패, 영업시간 밖 확인, 기존 예약 유지, 취소·정정 사유, 차단·해제, 320·390·1280px",
+    `PASS: 일정 권한, 실계정에서 목업 차단, 지난 시간·겹침 차단, 빈 일정, ${productionBuild ? "운영에서 개발용 오류 설정 무시" : "개발 조회 실패"}, 영업시간 밖 확인, 기존 예약 유지, 취소·정정 사유, 차단·해제, 320·390·1280px`,
   );
 } finally {
   await browser.close();
