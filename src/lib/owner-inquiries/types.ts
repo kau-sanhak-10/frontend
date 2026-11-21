@@ -100,7 +100,45 @@ export type InquiryMessage = {
   text?: string;
   photoId?: string;
   sentAt: number;
+  /** 서버가 알려 준 전송 상태. FAILED면 보낸 것처럼 보이지 않게 표시합니다. (C-11) */
+  delivery?: "PENDING" | "SENT" | "FAILED";
 };
+
+/** 지금 누가 고객에게 답하는지 (B-15·B-16) */
+export type Handler = "AI" | "OWNER";
+
+/**
+ * 고객이 남긴 사람 응대 요청 중 아직 끝나지 않은 것 (C-10·C-18)
+ * - DIRECT_CHAT: 사장님과 직접 상담하고 싶어요
+ * - CALLBACK: 전화로 연락 주세요 (이름·번호가 함께 옵니다)
+ */
+export type HandoffRequestInfo = {
+  id: string;
+  type: "DIRECT_CHAT" | "CALLBACK";
+  status: "WAITING" | "IN_PROGRESS";
+  name?: string;
+  phone?: string;
+};
+
+/** 덕구에게 다시 맡길 수 없는 이유 (서버 AI_RESUME_BLOCKED) */
+export type ResumeBlocker = "SAFETY" | "REQUIRED_FIELD";
+
+/**
+ * 응대 전환·답장·종료 결과. 실패를 성공처럼 보이지 않게 이유를 나눕니다.
+ * - FAILED: 네트워크·서버 문제 → 다시 시도
+ * - CLOSED: 이미 종료된 문의
+ * - NOT_OWNER_MODE: 직접 응대를 시작하지 않아 답장을 보낼 수 없음
+ * - RESUME_BLOCKED: 안전·필수정보가 남아 덕구에게 다시 맡길 수 없음 (blockers에 이유)
+ * - NOT_FOUND: 없거나 다른 업체 문의
+ */
+export type HandlingResult<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      code:
+        "FAILED" | "CLOSED" | "NOT_OWNER_MODE" | "RESUME_BLOCKED" | "NOT_FOUND";
+      blockers?: ResumeBlocker[];
+    };
 
 export type Reservation = {
   startAt: number;
@@ -138,6 +176,17 @@ export type InquiryDetail = InquirySummary & {
   messages: InquiryMessage[];
   /** 수정할 때 그대로 돌려보내는 버전. 그 사이 다른 곳에서 바뀌면 저장이 거절됩니다. */
   version: number;
+  /**
+   * 지금 고객에게 답하는 쪽. 상태(status)와 따로 봅니다.
+   * 사장님이 넘겨받아도 '확인 필요' 단계는 그대로일 수 있어요. (서버 takeOver는 단계를 바꾸지 않음)
+   */
+  handler: Handler;
+  /** 문의 종료 여부. 종료돼도 대화 기록과 예약은 남습니다. (B-16) */
+  closed: boolean;
+  /** 안전 신호가 있으면 덕구에게 다시 맡길 수 없습니다. */
+  safetyFlag: boolean;
+  /** 아직 끝나지 않은 고객의 사람 응대 요청 */
+  activeHandoff?: HandoffRequestInfo;
 };
 
 /** 업체 전용 접수 링크 (B-11, QR 제외) */
