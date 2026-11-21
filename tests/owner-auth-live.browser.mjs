@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { mkdir } from "node:fs/promises";
 
-const base = "http://127.0.0.1:35115";
+const base = process.env.OWNER_QA_BASE_URL || "http://127.0.0.1:35115";
+assert.ok(["127.0.0.1", "localhost"].includes(new URL(base).hostname));
 const api = "http://127.0.0.1:35116";
 const { chromium } = await import(
   process.env.PLAYWRIGHT_MODULE_PATH
@@ -275,6 +276,65 @@ try {
   await page.reload();
   await page.getByRole("link", { name: "내 계정" }).click();
   await page.getByText("로그인 번호 010-••••-0000").waitFor();
+  const manifestResponse = await page.request.get(
+    `${base}/manifest.webmanifest`,
+  );
+  assert.ok(manifestResponse.ok());
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.start_url, "/owner");
+  assert.equal(manifest.display, "standalone");
+  const installGuide = page
+    .locator("details")
+    .filter({ hasText: "홈 화면에 일로 추가" });
+  const installDetails = installGuide.locator("summary");
+  assert.equal(
+    await installGuide.getByText("iPhone Safari").isVisible(),
+    false,
+  );
+  await installDetails.press("Enter");
+  await installGuide.getByText("iPhone Safari").waitFor();
+  await installGuide.getByText("Android Chrome").waitFor();
+  await installGuide.getByText(/알림 권한은 앱 설치와 별개/).waitFor();
+  const originalViewport = page.viewportSize();
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+    );
+  }
+  if (originalViewport) await page.setViewportSize(originalViewport);
+  await installDetails.press("Enter");
+  assert.equal(
+    await installGuide.getByText("Android Chrome").isVisible(),
+    false,
+  );
+  // Chromium does not emulate installed display-mode; exercise the shipped rule.
+  assert.equal(
+    await installGuide.evaluate((guide) => {
+      const rule = Array.from(document.styleSheets)
+        .flatMap((sheet) => Array.from(sheet.cssRules))
+        .find(
+          (rule) =>
+            rule instanceof CSSMediaRule &&
+            rule.conditionText.replace(/\s/g, "") ===
+              "(display-mode:standalone)" &&
+            Array.from(rule.cssRules).some(
+              (child) =>
+                child instanceof CSSStyleRule &&
+                guide.matches(child.selectorText) &&
+                child.style.display === "none",
+            ),
+        );
+      if (!rule) return false;
+      rule.media.mediaText = "all";
+      return true;
+    }),
+    true,
+  );
+  assert.equal(await installGuide.isVisible(), false);
   await page.getByRole("link", { name: "업체 설정" }).click();
   await page.getByRole("button", { name: /업체정보/ }).click();
   const businessName = page.getByLabel("업체 이름", { exact: true });
@@ -380,9 +440,25 @@ try {
     await page.evaluate(() => sessionStorage.getItem("ilro.owner.session")),
     null,
   );
+  await page.evaluate(() => {
+    sessionStorage.setItem(
+      "ilro.owner.session",
+      JSON.stringify({
+        accessToken: "own_expired_test",
+        expiresAt: Date.now() - 1000,
+        name: "테스트",
+        loginPhone: "01000000000",
+        businessName: "테스트",
+        businessPhone: "01000000000",
+      }),
+    );
+  });
+  await page.goto(new URL(manifest.start_url, base).href);
+  await page.waitForURL("**/owner/login?reason=expired");
+  await page.getByRole("button", { name: "인증번호 받기" }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: owner verification/details, save/retry/reload, lost-response reconciliation, untouched phone/auto-booking refresh with intentional name retention, no dual checkbox lock or stale-phone overwrite, corrective save, logout",
+    "PASS: owner verification/details, PWA guide and expired launch, settings save/retry/reload, lost-response reconciliation, conflict-safe edits and logout",
   );
 } finally {
   await browser.close();
