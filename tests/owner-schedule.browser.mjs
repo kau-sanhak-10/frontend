@@ -16,16 +16,17 @@ const browser = await chromium.launch({
 });
 const output = path.resolve(".next/owner-schedule-qa");
 try {
-  const page = await browser.newPage({
+  const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     timezoneId: "Asia/Seoul",
   });
+  const page = await context.newPage();
   // HTTP previews on another device do not expose randomUUID.
   await page.addInitScript(() => {
     Object.defineProperty(Crypto.prototype, "randomUUID", { value: undefined });
   });
   await page.clock.setFixedTime(new Date("2026-11-11T02:00:00Z"));
-  await page.route("**/*", (route) =>
+  await context.route("**/*", (route) =>
     route.request().url().startsWith(base) ? route.continue() : route.abort(),
   );
   const errors = [];
@@ -96,15 +97,49 @@ try {
   await page.getByRole("button", { name: "변경 시간 제안" }).click();
   await page.getByLabel("날짜").fill("2026-11-12");
   await page.getByLabel("시작 시간").fill("14:00");
+  await page.getByLabel("작업시간(분)").fill("120");
   await page.getByLabel("사유", { exact: true }).fill("고객 요청");
   await page.getByRole("button", { name: "변경 제안 미리보기" }).click();
   await page
     .getByRole("status")
     .getByText(/기존 예약은 그대로/)
     .waitFor();
-  await page
-    .getByRole("button", { name: /16:00.*변경 제안.*예약 유지/ })
-    .waitFor();
+  const proposed = page.getByRole("button", {
+    name: /16:00.*17:00.*변경 제안.*예약 유지/,
+  });
+  await proposed.click();
+  const visit = page.getByRole("region", { name: "방문 정보" });
+  await visit
+    .getByText(/제안:.*14:00–16:00.*120분.*고객 요청/)
+    .waitFor({ timeout: 5_000 });
+  await capture("change-preview.png");
+  await page.getByRole("button", { name: "일정으로 돌아가기" }).click();
+
+  // Opt in when a second mock phone is mapped to biz-teunteun in the QA build.
+  const alternateMockPhone = process.env.OWNER_QA_ALT_MOCK_PHONE;
+  if (alternateMockPhone) {
+    const otherTab = await context.newPage();
+    await otherTab.goto(`${base}/manifest.webmanifest`);
+    const switchMockSession = (loginPhone) =>
+      otherTab.evaluate((number) => {
+        const key = "ilro.owner.mockSession";
+        const session = JSON.parse(localStorage.getItem(key));
+        localStorage.setItem(
+          key,
+          JSON.stringify({ ...session, loginPhone: number }),
+        );
+      }, loginPhone);
+    await switchMockSession(alternateMockPhone);
+    await page
+      .getByRole("heading", { name: "잡힌 일정이 없어요." })
+      .waitFor({ timeout: 5_000 });
+    await switchMockSession("01011112222");
+    await page
+      .getByRole("button", { name: /16:00.*17:00.*변경 요청/ })
+      .waitFor({ timeout: 5_000 });
+    assert.equal(await proposed.count(), 0);
+    await otherTab.close();
+  }
 
   await page.getByRole("button", { name: "일정 추가" }).click();
   await page.getByRole("button", { name: "시간 비우기" }).click();
@@ -235,7 +270,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    `PASS: 일정 권한, 실계정에서 목업 차단, 지난 시간·겹침 차단, 빈 일정, ${productionBuild ? "운영에서 개발용 오류 설정 무시" : "개발 조회 실패"}, 영업시간 밖 확인, 기존 예약 유지, 취소·정정 사유, 차단·해제, 320·390·1280px`,
+    `PASS: 일정 권한, 실계정에서 목업 차단, 지난 시간·겹침 차단, 빈 일정, ${productionBuild ? "운영에서 개발용 오류 설정 무시" : "개발 조회 실패"}, 영업시간 밖 확인, 기존 예약·제안 소요시간 유지, 취소·정정 사유, 차단·해제, 320·390·1280px${alternateMockPhone ? ", 업체 간 미리보기 분리" : ""}`,
   );
 } finally {
   await browser.close();

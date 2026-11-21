@@ -76,7 +76,7 @@ export function OwnerSchedule() {
     <OwnerGate screenName="일정">
       {({ source }) =>
         source.kind === "mock" ? (
-          <Schedule businessId={source.businessId} />
+          <Schedule key={source.businessId} businessId={source.businessId} />
         ) : (
           <main className={auth.page}>
             <StatusPanel
@@ -582,7 +582,7 @@ function ScheduleForm({
         {
           ...item,
           status: "변경 제안",
-          memo: `제안: ${days.format(startAt)} ${start} · ${reason.trim()}`,
+          memo: `제안: ${days.format(startAt)} ${formatClock(startAt)}–${formatClock(endAt)} · 작업 ${work}분 · ${reason.trim()}`,
         },
         "변경 제안을 미리봤어요. 기존 예약은 그대로예요.",
       );
