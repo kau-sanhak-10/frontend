@@ -4,12 +4,12 @@
 // - 이 브라우저가 Web Push를 지원하는지, 권한이 어떤 상태인지 보여 줍니다.
 // - 알림 종류별로 외부 알림을 켜고 끕니다. 중요 알림을 끄면 경고합니다.
 // - 외부 알림을 꺼도 앱 안의 확인 필요 목록과 알림 목록은 그대로 보입니다.
+// - 실제 로그인에서는 이 브라우저를 서버 푸시(BE-14)에 구독·해제합니다. (FE-16)
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { OwnerGate } from "../../_components/owner-gate";
 import { StatusPanel } from "../../_components/status-panel";
 import { useLoad } from "../../_components/use-load";
-import { WorkNotReady } from "../../_components/work-not-ready";
 import auth from "../../_components/owner-auth.module.css";
 import styles from "../../_components/owner-inquiries.module.css";
 import work from "../../_components/owner-work.module.css";
@@ -19,12 +19,15 @@ import {
   NOTIFICATION_LABEL,
   prefsWarning,
 } from "@/lib/owner-work/rules";
+import type { InquirySource } from "@/lib/owner-inquiries/source";
 import {
-  loadPrefs,
-  savePrefs,
-  workSourceOf,
-  type WorkSource,
-} from "@/lib/owner-work/source";
+  currentSubscription,
+  detectPush,
+  disablePush,
+  enablePush,
+  type PushState,
+} from "@/lib/owner-work/push";
+import { loadPrefs, savePrefs } from "@/lib/owner-work/source";
 import type {
   NotificationEvent,
   NotificationPrefs,
@@ -40,54 +43,29 @@ const EVENTS: { event: NotificationEvent; hint: string }[] = [
   { event: "CANCEL", hint: "고객이 예약을 취소했을 때" },
 ];
 
-/** 이 브라우저의 알림 지원·권한 상태 */
-type PushState =
-  "UNSUPPORTED" | "NEEDS_INSTALL" | "default" | "granted" | "denied";
-
-function detectPush(): PushState {
-  if (typeof window === "undefined") return "UNSUPPORTED";
-  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const standalone =
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  // iPhone·iPad는 홈 화면에 추가한 앱에서만 Web Push를 받을 수 있어요.
-  if (ios && !standalone) return "NEEDS_INSTALL";
-  if (
-    !("Notification" in window) ||
-    !("serviceWorker" in navigator) ||
-    !("PushManager" in window)
-  ) {
-    return "UNSUPPORTED";
-  }
-  return Notification.permission;
-}
-
 export function NotificationSettings() {
   return (
     <OwnerGate screenName="알림 설정">
-      {({ source }) => {
-        const ws = workSourceOf(source);
-        return (
-          <main className={auth.page}>
-            <header className={styles.detailHeader}>
-              <Link
-                href="/owner/notifications"
-                className={auth.backLink}
-                aria-label="알림으로 돌아가기"
-              >
-                ‹
-              </Link>
-              <h1 className={auth.headerTitle}>알림 설정</h1>
-            </header>
+      {({ source }) => (
+        <main className={auth.page}>
+          <header className={styles.detailHeader}>
+            <Link
+              href="/owner/notifications"
+              className={auth.backLink}
+              aria-label="알림으로 돌아가기"
+            >
+              ‹
+            </Link>
+            <h1 className={auth.headerTitle}>알림 설정</h1>
+          </header>
+          {source.kind === "live" ? (
+            <DevicePush token={source.token} />
+          ) : (
             <DevicePermission />
-            {ws ? (
-              <PrefsSection source={ws} />
-            ) : (
-              <WorkNotReady what="알림 종류 설정" />
-            )}
-          </main>
-        );
-      }}
+          )}
+          <PrefsSection source={source} />
+        </main>
+      )}
     </OwnerGate>
   );
 }
@@ -144,15 +122,162 @@ function DevicePermission() {
         </>
       )}
       <p className={auth.hint}>
-        외부 알림 발송은 서버 연결 후 시작돼요. 지금은 앱 안 알림 목록으로
-        확인해 주세요.
+        예시 로그인에서는 실제 푸시 구독을 하지 않아요. 실제 로그인에서 알림을
+        켜면 이 기기로 푸시가 와요.
+      </p>
+    </section>
+  );
+}
+
+/** 브라우저 지원·권한 안내 (켤 수 없는 상태일 때 공통 문구) */
+function PushStateNotice({ state }: { state: PushState }) {
+  if (state === "denied") {
+    return (
+      <p className={work.failBox}>
+        알림이 차단돼 있어요. 브라우저 주소창 왼쪽의 자물쇠(사이트 설정)에서
+        알림을 &lsquo;허용&rsquo;으로 바꾼 뒤 다시 켜 주세요.
+      </p>
+    );
+  }
+  if (state === "NEEDS_INSTALL") {
+    return (
+      <p className={auth.info}>
+        iPhone·iPad는 Safari 공유 버튼에서 &lsquo;홈 화면에 추가&rsquo;한 뒤, 홈
+        화면의 일로 앱에서 알림을 켤 수 있어요.
+      </p>
+    );
+  }
+  return (
+    <p className={auth.info}>
+      이 브라우저는 외부 알림을 지원하지 않아요. 홈 화면 상단의
+      &lsquo;알림&rsquo;에서 새 업무를 확인해 주세요.
+    </p>
+  );
+}
+
+const ENABLE_FAIL_TEXT = {
+  DENIED:
+    "알림을 허용하지 않아 켜지 못했어요. 브라우저 사이트 설정에서 알림을 허용해 주세요.",
+  UNSUPPORTED:
+    "이 브라우저는 외부 알림을 지원하지 않아요. 앱 안 알림 목록으로 확인해 주세요.",
+  UNAVAILABLE:
+    "지금은 서버에서 푸시 알림을 켤 수 없어요. 앱 안 알림 목록은 그대로 볼 수 있어요.",
+  FAILED: "알림을 켜지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.",
+} as const;
+
+/** 실제 로그인: 이 브라우저 푸시 구독 켜기·끄기 (B-27 ①, FE-16) */
+function DevicePush({ token }: { token: string }) {
+  const [state, setState] = useState<PushState>(() => detectPush());
+  // null: 확인 중
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{
+    tone: "ok" | "fail";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void currentSubscription().then((sub) => {
+      if (alive) setSubscribed(sub !== null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function turnOn() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await enablePush(token);
+      setState(detectPush());
+      if (res.ok) {
+        setSubscribed(true);
+        setMessage({ tone: "ok", text: "이 기기에서 업무 알림을 받아요." });
+      } else {
+        setMessage({ tone: "fail", text: ENABLE_FAIL_TEXT[res.code] });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function turnOff() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await disablePush(token);
+      setSubscribed(false);
+      setMessage(
+        res.ok
+          ? { tone: "ok", text: "이 기기 알림을 껐어요." }
+          : {
+              tone: "fail",
+              text: "이 기기 알림은 껐지만 서버에 반영하지 못했어요. 혹시 알림이 오면 다시 꺼 주세요.",
+            },
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canUse = state === "default" || state === "granted";
+
+  return (
+    <section className={auth.section} aria-labelledby="device-permission">
+      <h2 id="device-permission" className={auth.sectionTitle}>
+        이 기기 알림
+      </h2>
+      {!canUse ? (
+        <PushStateNotice state={state} />
+      ) : subscribed === null ? (
+        <p className={auth.info}>이 기기 알림 상태를 확인하는 중이에요…</p>
+      ) : subscribed ? (
+        <>
+          <p className={work.okBox}>이 기기에서 업무 알림을 받고 있어요.</p>
+          <button
+            type="button"
+            className={`${auth.button} ${auth.secondary} ${auth.full}`}
+            disabled={busy}
+            onClick={() => void turnOff()}
+          >
+            {busy ? "끄는 중…" : "이 기기 알림 끄기"}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className={auth.info}>
+            알림을 켜면 새 예약·확인 필요 문의를 이 기기로 바로 알려 드려요.
+          </p>
+          <button
+            type="button"
+            className={`${auth.button} ${auth.primary} ${auth.full}`}
+            disabled={busy}
+            onClick={() => void turnOn()}
+          >
+            {busy ? "켜는 중…" : "이 기기에서 알림 켜기"}
+          </button>
+        </>
+      )}
+      {message ? (
+        <p
+          className={message.tone === "ok" ? work.okBox : work.failBox}
+          role={message.tone === "ok" ? "status" : "alert"}
+        >
+          {message.text}
+        </p>
+      ) : null}
+      <p className={auth.hint}>
+        푸시 알림에는 고객 정보를 넣지 않아요. 누르면 알림 목록이 열려요.
+        로그아웃하면 이 기기 알림도 함께 꺼져요.
       </p>
     </section>
   );
 }
 
 /** 알림 종류별 수신 여부 (B-27 ②·③) */
-function PrefsSection({ source }: { source: WorkSource }) {
+function PrefsSection({ source }: { source: InquirySource }) {
   const fetcher = useCallback(() => loadPrefs(source), [source]);
   const { result, loadedAt, reload } = useLoad(fetcher);
 
@@ -181,7 +306,7 @@ function PrefsForm({
   source,
   initial,
 }: {
-  source: WorkSource;
+  source: InquirySource;
   initial: NotificationPrefs;
 }) {
   const [saved, setSaved] = useState(initial);

@@ -4,6 +4,7 @@
 // - 안전 확인 요청은 일반 알림과 따로 맨 위에 보여 줍니다.
 // - 알림을 누르면 읽음으로 바꾸고 해당 문의·예약 상세로 이동합니다.
 // - 읽음은 업무 처리 완료가 아닙니다. 문의·예약 상태는 바뀌지 않습니다.
+// - 예시 로그인은 목업, 실제 로그인은 서버 알림(BE-14)을 보여 줍니다. (FE-16)
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
@@ -11,63 +12,52 @@ import { OwnerGate } from "../_components/owner-gate";
 import { OwnerTabBar } from "../_components/owner-tab-bar";
 import { StatusPanel } from "../_components/status-panel";
 import { useLoad } from "../_components/use-load";
-import { WorkNotReady } from "../_components/work-not-ready";
 import auth from "../_components/owner-auth.module.css";
 import styles from "../_components/owner-inquiries.module.css";
 import work from "../_components/owner-work.module.css";
 import { DetailSkeleton } from "../inquiries/[id]/detail-states";
 import { formatReceivedAt } from "@/lib/owner-inquiries/format";
+import type { InquirySource } from "@/lib/owner-inquiries/source";
+import { NOTIFICATION_PAGE_SIZE } from "@/lib/owner-work/live-api";
 import {
-  NOTIFICATION_LABEL,
+  NOTIFICATION_KIND_LABEL,
   notificationHref,
   splitNotifications,
   unreadCount,
 } from "@/lib/owner-work/rules";
-import {
-  loadNotifications,
-  readNotification,
-  workSourceOf,
-  type WorkSource,
-} from "@/lib/owner-work/source";
+import { loadNotifications, readNotification } from "@/lib/owner-work/source";
 import type { OwnerNotification } from "@/lib/owner-work/types";
 
 export function OwnerNotifications() {
   return (
     <OwnerGate screenName="알림">
-      {({ source }) => {
-        const ws = workSourceOf(source);
-        return (
-          <main className={`${auth.page} ${styles.withTabBar}`}>
-            <header className={styles.detailHeader}>
-              <Link
-                href="/owner"
-                className={auth.backLink}
-                aria-label="홈으로 돌아가기"
-              >
-                ‹
-              </Link>
-              <h1 className={auth.headerTitle}>알림</h1>
-              <Link
-                href="/owner/notifications/settings"
-                className={styles.headerAction}
-              >
-                설정
-              </Link>
-            </header>
-            {ws ? (
-              <NotificationsBody source={ws} />
-            ) : (
-              <WorkNotReady what="알림" />
-            )}
-            <OwnerTabBar current="today" />
-          </main>
-        );
-      }}
+      {({ source }) => (
+        <main className={`${auth.page} ${styles.withTabBar}`}>
+          <header className={styles.detailHeader}>
+            <Link
+              href="/owner"
+              className={auth.backLink}
+              aria-label="홈으로 돌아가기"
+            >
+              ‹
+            </Link>
+            <h1 className={auth.headerTitle}>알림</h1>
+            <Link
+              href="/owner/notifications/settings"
+              className={styles.headerAction}
+            >
+              설정
+            </Link>
+          </header>
+          <NotificationsBody source={source} />
+          <OwnerTabBar current="today" />
+        </main>
+      )}
     </OwnerGate>
   );
 }
 
-function NotificationsBody({ source }: { source: WorkSource }) {
+function NotificationsBody({ source }: { source: InquirySource }) {
   const router = useRouter();
   const fetcher = useCallback(() => loadNotifications(source), [source]);
   const { result, loadedAt, reload } = useLoad(fetcher);
@@ -97,6 +87,9 @@ function NotificationsBody({ source }: { source: WorkSource }) {
     readIds.has(n.id) && n.readAt === null ? { ...n, readAt: loadedAt } : n,
   );
   const { safety, general } = splitNotifications(list);
+  // 예약 상세 화면은 사장님 예약 API(BE-13)가 생기기 전까지 실제 로그인에서 열리지 않아요.
+  const reservationPending =
+    source.kind === "live" && list.some((n) => n.refType === "RESERVATION");
 
   async function open(n: OwnerNotification) {
     if (n.readAt === null) {
@@ -137,6 +130,15 @@ function NotificationsBody({ source }: { source: WorkSource }) {
           now={loadedAt}
           onOpen={open}
         />
+      ) : null}
+      {reservationPending ? (
+        <p className={auth.hint}>
+          예약 알림의 상세 화면은 예약 서버 연결 후 열려요. 지금은 접수함에서
+          해당 고객 문의를 확인해 주세요.
+        </p>
+      ) : null}
+      {list.length >= NOTIFICATION_PAGE_SIZE ? (
+        <p className={auth.hint}>최근 {NOTIFICATION_PAGE_SIZE}건만 보여요.</p>
       ) : null}
     </div>
   );
@@ -180,7 +182,7 @@ function NotificationGroup({
                 <span
                   className={`${styles.badge} ${n.safety ? work.badgeSafety : ""}`}
                 >
-                  {n.safety ? "안전" : NOTIFICATION_LABEL[n.event]}
+                  {n.safety ? "안전" : NOTIFICATION_KIND_LABEL[n.event]}
                 </span>
               </span>
               <span className={styles.cardNote}>{n.body}</span>
