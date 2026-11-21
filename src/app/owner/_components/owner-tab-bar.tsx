@@ -6,8 +6,8 @@ type TabKey = "today" | "inquiries" | "schedule" | "business";
 const TABS: { key: TabKey; label: string; href: string | null }[] = [
   { key: "today", label: "오늘", href: "/owner" },
   { key: "inquiries", label: "접수", href: "/owner/inquiries" },
-  // 일정·업체 화면은 다른 작업에서 만듭니다.
-  { key: "schedule", label: "일정", href: null },
+  { key: "schedule", label: "일정", href: "/owner/visits" },
+  // 업체 화면은 다른 작업에서 만듭니다.
   { key: "business", label: "업체", href: null },
 ];
 

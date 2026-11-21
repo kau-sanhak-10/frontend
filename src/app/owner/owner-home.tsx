@@ -54,13 +54,9 @@ function OwnerHomeBody({
         <Link href="/owner/account" className={styles.headerAction}>
           내 계정
         </Link>
-        <span
-          className={styles.headerAction}
-          aria-disabled="true"
-          title="알림은 준비 중이에요"
-        >
+        <Link href="/owner/notifications" className={styles.headerAction}>
           알림
-        </span>
+        </Link>
       </header>
 
       {result === null ? (
