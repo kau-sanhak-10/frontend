@@ -6,6 +6,7 @@ import {
   validateWorkTypes,
   validateServiceAreas,
   missingAutoBookingSetup,
+  autoBookingSetupMessage,
   isSettingsSectionDirty,
   refreshSettingsDraft,
   setWorkTypeActive,
@@ -28,6 +29,23 @@ import {
 } from "../src/lib/owner-auth/api.ts";
 
 const previousBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+test("서버가 지정한 자동 예약 필수 항목만 안내하고 설정 변경 순서를 구분한다", () => {
+  assert.match(
+    autoBookingSetupMessage({ missing: ["WORK_TYPE", "toString"] }, false),
+    /자동 예약을 허용한 작업.*먼저 꺼 주세요/,
+  );
+  assert.equal(
+    autoBookingSetupMessage(
+      { missing: ["SERVICE_AREA", "START_ADDRESS"] },
+      true,
+    ),
+    "자동 예약을 켜려면 다음 항목을 먼저 저장해 주세요: 방문지역 · 출발지 주소",
+  );
+  assert.equal(
+    autoBookingSetupMessage(null, true),
+    "자동 예약에 필요한 설정을 다시 확인해 주세요.",
+  );
+});
 afterEach(() => {
   mock.restoreAll();
   if (previousBase === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL;

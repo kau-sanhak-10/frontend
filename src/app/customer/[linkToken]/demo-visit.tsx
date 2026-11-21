@@ -23,12 +23,16 @@ export default function CustomerInquiryReview({
   onBack,
   demo = true,
   onVisit,
+  onBooking,
+  waitingForOwner = false,
 }: {
   inquiryId: number;
   inquiryToken: string;
   onBack: () => void;
   demo?: boolean;
   onVisit?: () => void;
+  onBooking?: () => void;
+  waitingForOwner?: boolean;
 }) {
   const { origin, destination } = demoVisitLocations;
   const heading = useRef<HTMLHeadingElement>(null);
@@ -315,6 +319,11 @@ export default function CustomerInquiryReview({
           ) : null}
           {fieldSaved && <p role="status">접수 정보가 저장됐어요.</p>}
         </section>
+        {waitingForOwner && (
+          <p className={styles.hint} role="status">
+            사장님이 방문시간을 확인할 예정이에요.
+          </p>
+        )}
         {demo && (
           <>
             <h2>한국항공대학교로 방문 접수</h2>
@@ -349,9 +358,19 @@ export default function CustomerInquiryReview({
       </section>
       {edit === null && (
         <footer className={styles.footer}>
+          {!demo && onBooking && (
+            <button
+              type="button"
+              className={styles.primary}
+              disabled={busy}
+              onClick={onBooking}
+            >
+              방문시간·예약 확인
+            </button>
+          )}
           <button
             type="button"
-            className={styles.primary}
+            className={onBooking && !demo ? styles.textButton : styles.primary}
             disabled={busy || (demo ? state === "blocked" : !onVisit)}
             onClick={!demo ? onVisit : state === "saved" ? onBack : save}
           >

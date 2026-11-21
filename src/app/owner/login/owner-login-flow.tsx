@@ -28,6 +28,35 @@ import type { AccountBlockStatus, LoginNotice } from "@/lib/owner-auth/types";
 import { useOwnerSession } from "@/lib/owner-auth/use-owner-session";
 
 const HOME_PATH = "/owner";
+const koreaRetryTime = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "long",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+function keepResendDeadline(phone: string, preview: boolean, candidate = 0) {
+  if (!isValidPhone(phone)) return 0;
+  const key = `ilro.owner.resend.${preview ? "preview" : "live"}.${phone}`;
+  const now = Date.now();
+  const active = (value: number) =>
+    Number.isFinite(value) && value > now && value <= now + 86_405_000
+      ? value
+      : 0;
+  let deadline = active(candidate);
+  try {
+    // Keep only a timestamp per number in this tab. Never store the OTP here.
+    const saved = active(Number(window.sessionStorage.getItem(key)));
+    deadline = Math.max(deadline, saved);
+    if (deadline > saved) window.sessionStorage.setItem(key, String(deadline));
+    else if (!deadline) window.sessionStorage.removeItem(key);
+  } catch {
+    // The server still enforces limits if the browser blocks storage.
+  }
+  return deadline;
+}
 
 type Blocked = { status: AccountBlockStatus; rejectReason?: string };
 
@@ -98,7 +127,11 @@ export function OwnerLoginFlow({
   function handlePhoneChange(value: string) {
     if (busy) return;
     const digits = normalizePhone(value);
-    if (digits !== phone) requestId.current += 1;
+    if (digits !== phone) {
+      requestId.current += 1;
+      setClock(Date.now());
+      setResendAt(keepResendDeadline(digits, preview));
+    }
     setPhone(digits);
     setPhoneError(null);
     // 번호를 바꾸면 이전 인증은 다시 쓰지 않습니다.
@@ -109,15 +142,12 @@ export function OwnerLoginFlow({
       setLocked(false);
       verificationId.current = null;
       setExpiresAt(0);
-      // 재발송 제한은 번호별로 서버가 판단하므로 새 번호는 바로 요청할 수 있습니다.
-      setResendAt(0);
     }
   }
 
-  function updateRetryTime(seconds: number) {
-    const now = Date.now();
-    setClock(now);
-    setResendAt(now + seconds * 1000);
+  function updateRetryTime(deadline: number, requested = phone) {
+    setClock(Date.now());
+    setResendAt(keepResendDeadline(requested, preview, deadline));
   }
 
   function handleLiveError(error: unknown, stage: "send" | "verify") {
@@ -138,13 +168,19 @@ export function OwnerLoginFlow({
       });
       return;
     }
+    const now = Date.now();
+    const serverTime =
+      typeof details.retryAt === "string" ? Date.parse(details.retryAt) : 0;
     const retry =
-      typeof details.retryAfterSeconds === "number" &&
-      Number.isFinite(details.retryAfterSeconds) &&
-      details.retryAfterSeconds > 0
-        ? details.retryAfterSeconds
-        : undefined;
-    if (retry) updateRetryTime(retry);
+      serverTime > now
+        ? Math.ceil((serverTime - now) / 1000)
+        : typeof details.retryAfterSeconds === "number" &&
+            Number.isFinite(details.retryAfterSeconds) &&
+            details.retryAfterSeconds > 0
+          ? details.retryAfterSeconds
+          : undefined;
+    if (retry)
+      updateRetryTime(serverTime > now ? serverTime : now + retry * 1000);
     if (stage === "send") {
       setPhoneError(
         authErrorMessage(
@@ -191,6 +227,11 @@ export function OwnerLoginFlow({
       return;
     }
     if (busy) return;
+    const deadline = Math.max(resendAt, keepResendDeadline(phone, preview));
+    if (deadline > Date.now()) {
+      updateRetryTime(deadline);
+      return;
+    }
     const requested = phone;
     const id = ++requestId.current;
     setSending(true);
@@ -204,9 +245,8 @@ export function OwnerLoginFlow({
         setCode("");
         setCodeError(null);
         setLocked(false);
-        setClock(Date.now());
         setExpiresAt(Date.parse(result.expiresAt));
-        setResendAt(Date.parse(result.resendAvailableAt));
+        updateRetryTime(Date.parse(result.resendAvailableAt), requested);
         return;
       }
       const res = await requestVerificationCode(requested);
@@ -217,9 +257,8 @@ export function OwnerLoginFlow({
         setCodeError(null);
         setLocked(false);
         const now = Date.now();
-        setClock(now);
         setExpiresAt(now + res.expiresInSec * 1000);
-        setResendAt(now + res.resendAfterSec * 1000);
+        updateRetryTime(now + res.resendAfterSec * 1000, requested);
       } else if ("status" in res) {
         setBlocked({ status: res.status, rejectReason: res.rejectReason });
       } else {
@@ -227,7 +266,7 @@ export function OwnerLoginFlow({
           authErrorMessage(res.code, { retryAfterSec: res.retryAfterSec }),
         );
         if (res.code === "SEND_LIMIT" && res.retryAfterSec) {
-          updateRetryTime(res.retryAfterSec);
+          updateRetryTime(Date.now() + res.retryAfterSec * 1000, requested);
         }
       }
     } catch (error) {
@@ -285,7 +324,8 @@ export function OwnerLoginFlow({
       if (res.code === "ATTEMPT_LIMIT") {
         setLocked(true);
         setExpiresAt(0);
-        if (res.retryAfterSec) updateRetryTime(res.retryAfterSec);
+        if (res.retryAfterSec)
+          updateRetryTime(Date.now() + res.retryAfterSec * 1000, sentTo);
       }
       if (res.code === "CODE_EXPIRED") setExpiresAt(0);
     } catch (error) {
@@ -419,6 +459,14 @@ export function OwnerLoginFlow({
           {phoneError && (
             <p id={phoneErrorId} className={styles.error} role="alert">
               {phoneError}
+            </p>
+          )}
+          {cooldown > 0 && (
+            <p className={styles.hint}>
+              다음 발송 가능 시각 (한국 시간):{" "}
+              <time dateTime={new Date(resendAt).toISOString()}>
+                {koreaRetryTime.format(resendAt)}
+              </time>
             </p>
           )}
         </div>

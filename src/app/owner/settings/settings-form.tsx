@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { InputHTMLAttributes, ReactNode } from "react";
+import type { searchOwnerLocation } from "@/lib/owner-settings-api";
 import {
   type SettingsData,
   type SettingsSection,
@@ -64,10 +65,104 @@ function Field({
   );
 }
 
+type Search = (
+  kind: "addresses" | "regions",
+  input: string,
+  signal: AbortSignal,
+) => ReturnType<typeof searchOwnerLocation>;
+
+function LocationSearch({
+  kind,
+  search,
+  onSelect,
+}: {
+  kind: "addresses" | "regions";
+  search: Search;
+  onSelect: (item: Awaited<ReturnType<Search>>[number]) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [results, setResults] = useState<Awaited<ReturnType<Search>> | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const pending = useRef<AbortController | null>(null);
+  useEffect(() => () => pending.current?.abort(), []);
+  async function find() {
+    if (pending.current || !input.trim()) return;
+    const controller = new AbortController();
+    pending.current = controller;
+    setResults(null);
+    setError(false);
+    setBusy(true);
+    try {
+      const items = await search(kind, input, controller.signal);
+      if (!controller.signal.aborted) setResults(items);
+    } catch {
+      if (!controller.signal.aborted) setError(true);
+    } finally {
+      if (pending.current === controller) pending.current = null;
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  }
+  const address = kind === "addresses";
+  return (
+    <div aria-busy={busy}>
+      <Field
+        id="location-search"
+        label={address ? "새 출발지 검색어" : "방문지역 검색어"}
+        value={input}
+        maxLength={100}
+        disabled={busy}
+        onChange={(event) => {
+          setInput(event.target.value);
+          setResults(null);
+          setError(false);
+        }}
+      />
+      <button
+        className={`${common.button} ${common.secondary}`}
+        type="button"
+        disabled={busy || !input.trim()}
+        onClick={() => void find()}
+      >
+        {busy ? "검색 중…" : address ? "출발지 검색" : "방문지역 검색"}
+      </button>
+      {error && (
+        <p role="alert" className={common.error}>
+          검색하지 못했어요. 다시 시도해 주세요.
+        </p>
+      )}
+      {results?.length === 0 && (
+        <p role="status" className={common.hint}>
+          검색 결과가 없어요.
+        </p>
+      )}
+      {results?.map((item, index) => {
+        const label = "address" in item ? item.address : item.regionName;
+        return (
+          <button
+            className={`${common.button} ${common.secondary}`}
+            type="button"
+            key={`${label}-${index}`}
+            onClick={() => {
+              onSelect(item);
+              setResults(null);
+            }}
+          >
+            {label} 선택
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SettingsForm({
   initialData,
   onSave,
   onReload,
+  onSearchLocation,
   preview = false,
 }: {
   initialData: SettingsData;
@@ -77,6 +172,7 @@ export default function SettingsForm({
     saved: SettingsData,
   ) => Promise<SettingsData>;
   onReload?: () => Promise<SettingsData>;
+  onSearchLocation?: Search;
   preview?: boolean;
 }) {
   const [saved, setSaved] = useState(initialData);
@@ -390,10 +486,27 @@ export default function SettingsForm({
                   error={errors.address}
                 >
                   <p className={common.hint}>
-                    주소 검색 연결 후 변경할 수 있어요. 현재 출발지의 위치
-                    정보는 그대로 유지돼요.
+                    새 출발지는 검색 결과에서 선택한 뒤 저장해 주세요.
                   </p>
                 </Field>
+                {onSearchLocation && (
+                  <LocationSearch
+                    kind="addresses"
+                    search={onSearchLocation}
+                    onSelect={(item) => {
+                      if (!("address" in item)) return;
+                      setDraft((value) => ({
+                        ...value,
+                        business: { ...value.business, ...item },
+                      }));
+                      setErrors((value) => {
+                        const next = { ...value };
+                        delete next.address;
+                        return next;
+                      });
+                    }}
+                  />
+                )}
                 <Field
                   id="serviceDescription"
                   label="제공 서비스 안내 (선택)"
@@ -446,7 +559,7 @@ export default function SettingsForm({
                     {draft.serviceAreas.map((a) => (
                       <li key={a.regionCode}>
                         <span>{a.regionName}</span>
-                        {preview && (
+                        {(preview || onSearchLocation) && (
                           <button
                             type="button"
                             onClick={() =>
@@ -497,6 +610,29 @@ export default function SettingsForm({
                       </button>
                     ))}
                   </>
+                ) : onSearchLocation ? (
+                  <LocationSearch
+                    kind="regions"
+                    search={onSearchLocation}
+                    onSelect={(item) => {
+                      if (!item.regionCode || !item.regionName) return;
+                      const { regionCode, regionName } = item;
+                      setDraft((value) =>
+                        value.serviceAreas.some(
+                          (area) => area.regionCode === regionCode,
+                        )
+                          ? value
+                          : {
+                              ...value,
+                              serviceAreas: [
+                                ...value.serviceAreas,
+                                { regionCode, regionName },
+                              ],
+                            },
+                      );
+                      setNotice("");
+                    }}
+                  />
                 ) : (
                   <p className={common.info}>
                     지역 검색을 연결한 뒤 방문지역을 추가할 수 있어요.

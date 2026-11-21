@@ -111,6 +111,49 @@ function requireValid(errors: Record<string, string>) {
 }
 export const getBusiness = (token: string, signal?: AbortSignal) =>
   call(token, "business", business, "GET", undefined, signal);
+
+export async function searchOwnerLocation(
+  token: string,
+  kind: "addresses" | "regions",
+  input: string,
+  signal: AbortSignal,
+) {
+  const query = input.trim();
+  if (!query || query.length > 100) throw new Error("검색어를 확인해 주세요.");
+  const data = await requestApi<Record<string, unknown>>(
+    `/api/v1/owner/${kind}?${new URLSearchParams({ query })}`,
+    { headers: ownerHeaders(token), signal },
+  );
+  const items = data?.[kind];
+  if (!Array.isArray(items)) throw new Error("검색 결과를 확인하지 못했어요.");
+  return items.map((item) => {
+    if (
+      kind === "regions" &&
+      object(item) &&
+      typeof item.regionCode === "string" &&
+      /^\d{5}$/.test(item.regionCode) &&
+      typeof item.regionName === "string" &&
+      item.regionName.trim() &&
+      item.regionName.length <= 50
+    )
+      return { regionCode: item.regionCode, regionName: item.regionName };
+    if (
+      kind === "addresses" &&
+      object(item) &&
+      typeof item.address === "string" &&
+      item.address.trim() &&
+      item.address.length <= 255 &&
+      typeof item.lat === "number" &&
+      Number.isFinite(item.lat) &&
+      Math.abs(item.lat) <= 90 &&
+      typeof item.lng === "number" &&
+      Number.isFinite(item.lng) &&
+      Math.abs(item.lng) <= 180
+    )
+      return { address: item.address, lat: item.lat, lng: item.lng };
+    throw new Error("검색 결과를 확인하지 못했어요.");
+  });
+}
 export function saveBusiness(
   token: string,
   value: BusinessInfo,
@@ -239,8 +282,14 @@ export async function saveOwnerSettingsSection(
       const { workTypes } = await saveWorkTypes(token, draft.workTypes, signal);
       return { ...saved, workTypes };
     }
-    case "regions":
-      throw new Error("지역 검색이 연결되면 방문지역을 바꿀 수 있어요.");
+    case "regions": {
+      const { serviceAreas } = await saveServiceAreas(
+        token,
+        draft.serviceAreas,
+        signal,
+      );
+      return { ...saved, serviceAreas };
+    }
     case "intake": {
       const auto =
         draft.booking.autoBookingEnabled !== saved.booking.autoBookingEnabled;

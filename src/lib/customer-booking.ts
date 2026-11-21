@@ -11,6 +11,22 @@ export type ConfirmedVisit = VisitSlot & {
   version: number;
   notifications: { recipient: string; channel: string; sendStatus: string }[];
 };
+export const reservationStatuses = {
+  REQUESTED: "요청",
+  CONFIRMED: "확정",
+  COMPLETED: "완료",
+  CANCELED: "취소",
+};
+export type BookingResult = Omit<ConfirmedVisit, "status" | "notifications"> & {
+  status: keyof typeof reservationStatuses;
+  notifications?: ConfirmedVisit["notifications"];
+};
+
+export function isBookingStatus(
+  value: unknown,
+): value is BookingResult["status"] {
+  return typeof value === "string" && Object.hasOwn(reservationStatuses, value);
+}
 
 const object = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
@@ -83,6 +99,23 @@ export function readConfirmedVisit(value: unknown): ConfirmedVisit {
   return value as ConfirmedVisit;
 }
 
+export function readBookingResult(
+  value: unknown,
+  fromConfirmation = false,
+): BookingResult {
+  if (
+    !isVisitSlot(value) ||
+    !isBookingStatus(value.status) ||
+    !Number.isSafeInteger(value.reservationId) ||
+    (value.reservationId as number) <= 0 ||
+    !Number.isSafeInteger(value.version) ||
+    (value.version as number) < 0
+  )
+    throw new Error("예약 상태를 확인할 수 없어요.");
+  if (fromConfirmation) readConfirmedVisit({ ...value, status: "CONFIRMED" });
+  return value as BookingResult;
+}
+
 export function formatVisit(value: string, timeOnly = false) {
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -139,6 +172,11 @@ export function bookingIssue(error: unknown) {
       return {
         kind: "existing",
         message: "이미 연결된 예약이 있어요. 기존 예약을 확인해 주세요.",
+        reservationId:
+          object(error.result) &&
+          Number.isSafeInteger(error.result.reservationId)
+            ? (error.result.reservationId as number)
+            : undefined,
       } as const;
   }
   return {

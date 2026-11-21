@@ -304,22 +304,51 @@ export function validateServiceAreas(items: ServiceArea[]): SettingErrors {
   return errors;
 }
 
+const bookingRequirements = {
+  BUSINESS_HOURS: "영업시간",
+  WORK_TYPE: "자동 예약을 허용한 작업",
+  SERVICE_AREA: "방문지역",
+  START_ADDRESS: "출발지 주소",
+} as const;
+
+export function autoBookingSetupMessage(result: unknown, enabling: boolean) {
+  const missing =
+    result &&
+    typeof result === "object" &&
+    "missing" in result &&
+    Array.isArray(result.missing)
+      ? result.missing.flatMap((key: unknown) =>
+          typeof key === "string" && Object.hasOwn(bookingRequirements, key)
+            ? [bookingRequirements[key as keyof typeof bookingRequirements]]
+            : [],
+        )
+      : [];
+  if (enabling)
+    return missing.length
+      ? `자동 예약을 켜려면 다음 항목을 먼저 저장해 주세요: ${missing.join(" · ")}`
+      : "자동 예약에 필요한 설정을 다시 확인해 주세요.";
+  const detail = missing.length
+    ? `자동 예약에 필요한 항목: ${missing.join(" · ")}. `
+    : "자동 예약에 필요한 설정이라 변경하지 못했어요. ";
+  return `${detail}이 설정을 빼려면 ‘접수·예약’에서 자동 예약을 먼저 꺼 주세요.`;
+}
+
 export function missingAutoBookingSetup(data: SettingsData): string[] {
   const missing: string[] = [];
   if (
     !data.booking.businessHours.some((h) => !h.isClosed) ||
     Object.keys(validateBooking(data.booking)).length
   )
-    missing.push("영업시간");
+    missing.push(bookingRequirements.BUSINESS_HOURS);
   if (!data.workTypes.some((w) => w.isActive && w.autoBookingAllowed))
-    missing.push("자동 예약을 허용한 작업");
-  if (!data.serviceAreas.length) missing.push("방문지역");
+    missing.push(bookingRequirements.WORK_TYPE);
+  if (!data.serviceAreas.length) missing.push(bookingRequirements.SERVICE_AREA);
   if (
     !data.business.address ||
     data.business.lat === null ||
     data.business.lng === null
   )
-    missing.push("출발지 주소");
+    missing.push(bookingRequirements.START_ADDRESS);
   return missing;
 }
 

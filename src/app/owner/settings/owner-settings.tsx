@@ -16,8 +16,13 @@ import {
   getServiceAreas,
   getWorkTypes,
   saveOwnerSettingsSection,
+  searchOwnerLocation,
 } from "@/lib/owner-settings-api";
-import type { SettingsData, SettingsSection } from "@/lib/owner-settings";
+import {
+  autoBookingSetupMessage,
+  type SettingsData,
+  type SettingsSection,
+} from "@/lib/owner-settings";
 import type { LoadResult } from "@/lib/owner-inquiries/types";
 import { OwnerGate } from "../_components/owner-gate";
 import { StatusPanel } from "../_components/status-panel";
@@ -129,7 +134,9 @@ function LiveSettings({ token }: { token: string }) {
         error instanceof ApiError &&
         error.code === "AUTO_BOOKING_SETUP_INCOMPLETE"
       )
-        throw new Error("자동 예약에 필요한 설정을 다시 확인해 주세요.");
+        throw new Error(
+          autoBookingSetupMessage(error.result, section === "intake"),
+        );
       if (
         error instanceof ApiError &&
         error.code === "LUNCH_OUTSIDE_BUSINESS_HOURS"
@@ -144,6 +151,16 @@ function LiveSettings({ token }: { token: string }) {
       <SettingsForm
         initialData={result.data}
         onSave={save}
+        onSearchLocation={async (kind, input, signal) => {
+          if (!currentSessionMatches(token))
+            throw new Error("다시 로그인해 주세요.");
+          try {
+            return await searchOwnerLocation(token, kind, input, signal);
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) expire();
+            throw error;
+          }
+        }}
         onReload={async () => {
           const current = await load();
           if (!current.ok) throw new Error("업체 설정을 다시 확인해 주세요.");

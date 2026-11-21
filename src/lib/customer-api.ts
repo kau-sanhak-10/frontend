@@ -59,7 +59,12 @@ async function readInquiry(
   const value = await requestApi<{
     inquiryId: number;
     version: number;
+    status?: unknown;
+    handlerMode?: unknown;
     visitInfo?: unknown;
+    phoneVerified?: unknown;
+    consents?: unknown;
+    reservation?: { reservationId?: unknown } | null;
   }>(path, options);
   if (
     value?.inquiryId !== inquiryId ||
@@ -78,6 +83,44 @@ export async function getCustomerInquiryVersion(
   const { path, headers } = inquiryAccess(inquiryId, token);
   return (await readInquiry(path, inquiryId, { headers, signal })).version;
 }
+
+export async function searchCustomerAddresses(
+  inquiryId: number,
+  token: string,
+  input: string,
+  signal: AbortSignal,
+) {
+  const { path, headers } = inquiryAccess(inquiryId, token);
+  const query = input.trim();
+  if (!query || query.length > 100)
+    throw new Error("주소 검색어를 확인해 주세요.");
+  const response = await requestApi<{ addresses: unknown }>(
+    `${path}/addresses?${new URLSearchParams({ query })}`,
+    { headers, signal },
+  );
+  if (!Array.isArray(response?.addresses))
+    throw new Error("주소 검색 결과를 확인하지 못했어요.");
+  return response.addresses.map((value) => {
+    const { address, lat, lng } = value ?? {};
+    if (
+      typeof address !== "string" ||
+      !address.trim() ||
+      address.length > 200 ||
+      typeof lat !== "number" ||
+      !Number.isFinite(lat) ||
+      Math.abs(lat) > 90 ||
+      typeof lng !== "number" ||
+      !Number.isFinite(lng) ||
+      Math.abs(lng) > 180
+    )
+      throw new Error("주소 검색 결과를 확인하지 못했어요.");
+    return { address, lat, lng };
+  });
+}
+
+export type CustomerAddress = Awaited<
+  ReturnType<typeof searchCustomerAddresses>
+>[number];
 
 export async function getCustomerVisitInfo(
   inquiryId: number,
@@ -110,8 +153,26 @@ export async function getCustomerVisitInfo(
     Math.abs(value.lng) <= 180
       ? { lat: value.lat, lng: value.lng }
       : null;
+  const schedulingStage =
+    data.status === "COLLECTING" || data.status === "SCHEDULING";
   return {
     version: data.version,
+    bookingStage:
+      data.status === "OWNER_CHECK" ||
+      (schedulingStage && data.handlerMode === "OWNER")
+        ? ("owner-review" as const)
+        : schedulingStage && data.handlerMode === "AI"
+          ? ("candidate" as const)
+          : null,
+    phoneVerified: data.phoneVerified === true,
+    photoConsent:
+      Array.isArray(data.consents) && data.consents.includes("PHOTO"),
+    reservationId:
+      typeof data.reservation?.reservationId === "number" &&
+      Number.isSafeInteger(data.reservation.reservationId) &&
+      data.reservation.reservationId > 0
+        ? data.reservation.reservationId
+        : null,
     coordinates,
     visit: {
       ...emptyVisitInfo,
@@ -627,6 +688,7 @@ export async function createCustomerInquiry(
     termsVersion: string;
   }[],
   signal?: AbortSignal,
+  startKey?: string,
 ) {
   if (!linkToken.trim() || /[\r\n]/.test(linkToken))
     throw new Error("Invalid intake link");
@@ -640,7 +702,10 @@ export async function createCustomerInquiry(
     {
       method: "POST",
       signal,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(startKey ? { "Idempotency-Key": startKey } : {}),
+      },
       body: JSON.stringify({ consents }),
     },
   );

@@ -7,7 +7,8 @@ const { chromium } = await import(
     : "playwright"
 );
 const base = process.env.PREVIEW_BASE_URL ?? "http://127.0.0.1:35115";
-const api = "http://127.0.0.1:35116";
+const api = process.env.PREVIEW_API_URL ?? "http://127.0.0.1:35116";
+assert.equal(new URL(api).hostname, "127.0.0.1");
 const browser = await chromium.launch({
   headless: true,
   channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
@@ -217,12 +218,7 @@ try {
   await phone.fill("010-0000-0000");
   const name = page.getByLabel("이름", { exact: true });
   await name.fill("새 테스트 이름");
-  assert.equal(
-    await page
-      .getByLabel("방문 주소", { exact: true })
-      .getAttribute("readonly"),
-    "",
-  );
+  assert.ok(await page.getByLabel("방문 주소", { exact: true }).isEditable());
   const save = page.getByRole("button", {
     name: "접수 내용 확인",
     exact: true,
@@ -383,7 +379,7 @@ try {
   await page
     .getByRole("button", { name: "방문정보 입력·수정", exact: true })
     .click();
-  await page.getByText(/주소 검색을 연결하고 있어요/).waitFor();
+  await page.getByRole("button", { name: "주소 검색", exact: true }).waitFor();
   await page
     .getByRole("button", {
       name: "내 입력 대신 최신 방문정보 가져오기",
@@ -391,6 +387,9 @@ try {
     })
     .click();
   await save.click();
+  await page
+    .getByText(/주소 검색 결과가 있어야 방문정보를 저장할 수 있어요/)
+    .waitFor();
   assert.equal(writes, 7);
   assert.deepEqual(errors, []);
   console.log(

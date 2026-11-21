@@ -150,7 +150,24 @@ try {
         aiSummary: null,
         createdAt,
         fields: [
-          { ...field, fieldKey: "manufacturer" },
+          {
+            ...field,
+            fieldKey: "manufacturer",
+            value: "린나이",
+            source: "CUSTOMER",
+            status: "CONFIRMED",
+            unconfirmedReason: null,
+            history: [{ value: "귀뚜라미", source: "CUSTOMER", createdAt }],
+          },
+          {
+            ...field,
+            fieldKey: "controller_model",
+            value: "RC-800",
+            source: "OWNER",
+            status: "CONFIRMED",
+            unconfirmedReason: null,
+            history: [{ value: "RC-700", source: "PHOTO", createdAt }],
+          },
           {
             ...field,
             fieldKey: "symptom",
@@ -193,6 +210,17 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${base}/owner/inquiries/14`);
   await page.getByText("사진 없음", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByText("이전 값: 귀뚜라미", { exact: true }).count(),
+    1,
+    "A customer correction must not be attributed to the owner",
+  );
+  assert.equal(
+    await page
+      .getByText("사장님이 고친 값이에요 · 이전 값: RC-700", { exact: true })
+      .count(),
+    1,
+  );
   hasPhoto = true;
   await page
     .getByAltText("고객 사진 1", { exact: true })
@@ -266,7 +294,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: later photo appears in detail/chat without reload; transient failure preserves photo; hidden/unmounted polling stops",
+    "PASS: correct customer/owner history labels; later photo appears in detail/chat without reload; transient failure preserves photo; hidden/unmounted polling stops",
   );
 } finally {
   await browser?.close();

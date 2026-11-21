@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { createClientId } from "@/lib/customer-consultation";
 import {
@@ -9,9 +9,10 @@ import {
   formatVisit,
   kstDate,
   readAvailableVisits,
-  readConfirmedVisit,
+  readBookingResult,
+  reservationStatuses,
   type AvailableVisits,
-  type ConfirmedVisit,
+  type BookingResult,
   type VisitSlot,
 } from "@/lib/customer-booking";
 import base from "./intake.module.css";
@@ -25,10 +26,14 @@ type Props = {
     slot: VisitSlot,
     key: string,
     signal: AbortSignal,
-  ) => Promise<ConfirmedVisit>;
+  ) => Promise<BookingResult>;
   phoneVerified: boolean;
   onVerify?: () => Promise<boolean>;
-  onExisting?: () => Promise<ConfirmedVisit>;
+  renderVerification?: (verified: () => void) => ReactNode;
+  onExisting?: (
+    signal: AbortSignal,
+    reservationId?: number,
+  ) => Promise<BookingResult>;
 };
 
 export default function CustomerBooking({
@@ -38,6 +43,7 @@ export default function CustomerBooking({
   onConfirm,
   phoneVerified,
   onVerify,
+  renderVerification,
   onExisting,
 }: Props) {
   const [from, setFrom] = useState(() => kstDate());
@@ -46,10 +52,11 @@ export default function CustomerBooking({
   const [selected, setSelected] = useState<VisitSlot | null>(null);
   const [review, setReview] = useState(false);
   const [verified, setVerified] = useState(phoneVerified);
-  const [confirmed, setConfirmed] = useState<ConfirmedVisit | null>(null);
+  const [confirmed, setConfirmed] = useState<BookingResult | null>(null);
   const [issue, setIssue] = useState<{
     kind: ReturnType<typeof bookingIssue>["kind"];
     message: string;
+    reservationId?: number;
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
@@ -103,6 +110,7 @@ export default function CustomerBooking({
             ? {
                 kind: "existing",
                 message: "기존 예약을 불러오지 못했어요. 다시 확인해 주세요.",
+                reservationId: issue?.reservationId,
               }
             : problem,
         );
@@ -125,8 +133,9 @@ export default function CustomerBooking({
     if (!requestKey.current) requestKey.current = createClientId();
     const key = requestKey.current;
     void act(async (signal) => {
-      const result = readConfirmedVisit(
+      const result = readBookingResult(
         await onConfirm(candidate, key, signal),
+        true,
       );
       if (!signal.aborted) {
         setConfirmed(result);
@@ -136,7 +145,7 @@ export default function CustomerBooking({
   }
   const blocked =
     issue && ["owner", "expired", "existing"].includes(issue.kind);
-  const failedNotifications = confirmed?.notifications.some(
+  const failedNotifications = confirmed?.notifications?.some(
     (n) => n.sendStatus === "FAILED",
   );
   return (
@@ -163,7 +172,11 @@ export default function CustomerBooking({
         <p>{businessName}</p>
         {confirmed ? (
           <>
-            <h2>방문 예약이 확정됐어요</h2>
+            <h2>
+              {confirmed.status === "CONFIRMED"
+                ? "방문 예약이 확정됐어요"
+                : "방문 예약 상태"}
+            </h2>
             <dl className={base.review}>
               <dt>방문시간</dt>
               <dd>
@@ -173,13 +186,15 @@ export default function CustomerBooking({
               <dt>예약번호</dt>
               <dd>{confirmed.reservationId}</dd>
               <dt>예약 상태</dt>
-              <dd>확정</dd>
+              <dd>{reservationStatuses[confirmed.status]}</dd>
             </dl>
-            <p role="status">
-              {failedNotifications
-                ? "예약은 확정됐어요. 안내 문자·알림 발송은 다시 확인 중이에요. 이 화면의 예약 내용을 확인해 주세요."
-                : "확정된 시간에 방문해요. 예약 내용은 이 화면에서 확인할 수 있어요."}
-            </p>
+            {confirmed.status === "CONFIRMED" && (
+              <p role="status">
+                {failedNotifications
+                  ? "예약은 확정됐어요. 안내 문자·알림 발송은 다시 확인 중이에요. 이 화면의 예약 내용을 확인해 주세요."
+                  : "확정된 시간에 방문해요. 예약 내용은 이 화면에서 확인할 수 있어요."}
+              </p>
+            )}
           </>
         ) : (
           <>
@@ -203,25 +218,32 @@ export default function CustomerBooking({
                   <dt>휴대전화</dt>
                   <dd>{verified ? "인증 완료" : "인증 필요"}</dd>
                 </dl>
-                {!verified && (
+                {!verified && !blocked && (
                   <>
                     <p>
                       예약을 확정하기 전에 방문정보에 입력한 번호를 인증해
                       주세요.
                     </p>
-                    <button
-                      type="button"
-                      className={base.primary}
-                      disabled={busy || !onVerify || !!blocked}
-                      onClick={() =>
-                        void act(async (signal) => {
-                          const ok = await onVerify!();
-                          if (!signal.aborted) setVerified(ok);
-                        })
-                      }
-                    >
-                      {onVerify ? "휴대전화 인증" : "문자 인증 연결 준비 중"}
-                    </button>
+                    {renderVerification ? (
+                      renderVerification(() => {
+                        setVerified(true);
+                        setIssue(null);
+                      })
+                    ) : (
+                      <button
+                        type="button"
+                        className={base.primary}
+                        disabled={busy || !onVerify || !!blocked}
+                        onClick={() =>
+                          void act(async (signal) => {
+                            const ok = await onVerify!();
+                            if (!signal.aborted) setVerified(ok);
+                          })
+                        }
+                      >
+                        {onVerify ? "휴대전화 인증" : "문자 인증 연결 준비 중"}
+                      </button>
+                    )}
                   </>
                 )}
               </>
@@ -337,7 +359,9 @@ export default function CustomerBooking({
                     onClick={() =>
                       void act(
                         async (signal) => {
-                          const value = readConfirmedVisit(await onExisting());
+                          const value = readBookingResult(
+                            await onExisting(signal, issue.reservationId),
+                          );
                           if (!signal.aborted) setConfirmed(value);
                         },
                         false,

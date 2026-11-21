@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
+import {
+  confirmCustomerVisit,
+  getAvailableVisits,
+  getCustomerReservation,
+} from "@/lib/customer-booking-api";
 import {
   getCustomerVisitInfo,
   saveCustomerVisitInfo,
+  searchCustomerAddresses,
   visitSaveError,
+  type CustomerAddress,
 } from "@/lib/customer-api";
 import {
   VisitInputError,
@@ -13,10 +20,16 @@ import {
   type VisitInfo,
 } from "@/lib/customer-intake";
 import CustomerIntake from "../intake";
+import CustomerBooking from "../booking";
+import CustomerVerificationForm from "../customer-verification-form";
 import CustomerInquiryReview from "./demo-visit";
 import styles from "../intake.module.css";
 
-export type VisitDraft = { visit: VisitInfo; version: number };
+export type VisitDraft = {
+  visit: VisitInfo;
+  version: number;
+  addressMatch?: CustomerAddress | null;
+};
 
 export default function CustomerVisit({
   business,
@@ -24,24 +37,50 @@ export default function CustomerVisit({
   inquiryToken,
   draft: initialDraft,
   onBack,
+  bookingEnabled,
 }: {
   business: IntakeBusiness;
   inquiryId: number;
   inquiryToken: string;
   draft: VisitDraft | null;
   onBack: (draft: VisitDraft | null) => void;
+  bookingEnabled: boolean;
 }) {
   const [snapshot, setSnapshot] = useState<Awaited<
     ReturnType<typeof getCustomerVisitInfo>
   > | null>(null);
   const [draft, setDraft] = useState(initialDraft);
+  const [addressMatch, setAddressMatch] = useState(
+    initialDraft?.addressMatch ?? null,
+  );
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showBooking, setShowBooking] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [conflict, setConflict] = useState(false);
   const [formKey, setFormKey] = useState(0);
   const request = useRef<AbortController | null>(null);
+  const readBookingPhone = useCallback(
+    async (signal: AbortSignal) =>
+      (await getCustomerVisitInfo(inquiryId, inquiryToken, signal)).visit.phone,
+    [inquiryId, inquiryToken],
+  );
+  const loadBooking = useCallback(
+    async (from: string, signal: AbortSignal) => {
+      const latest = await getCustomerVisitInfo(
+        inquiryId,
+        inquiryToken,
+        signal,
+      );
+      if (latest.reservationId)
+        throw new ApiError(409, "RESERVATION_ALREADY_EXISTS", "", {
+          reservationId: latest.reservationId,
+        });
+      return getAvailableVisits(inquiryId, inquiryToken, from, signal);
+    },
+    [inquiryId, inquiryToken],
+  );
   useEffect(() => () => request.current?.abort(), []);
   useEffect(() => {
     const controller = new AbortController();
@@ -77,6 +116,7 @@ export default function CustomerVisit({
               className={styles.textButton}
               onClick={() => {
                 setDraft({ visit: snapshot.visit, version: snapshot.version });
+                setAddressMatch(null);
                 setFormKey((v) => v + 1);
                 setConflict(false);
               }}
@@ -90,16 +130,16 @@ export default function CustomerVisit({
           business={business}
           initialStep="visit"
           initialVisit={draft?.visit ?? snapshot.visit}
-          addressReadOnly
-          addressHint={
-            snapshot.coordinates && snapshot.visit.address
-              ? "저장된 방문 주소예요. 다른 주소 검색은 연결 준비 중이에요."
-              : "주소 검색을 연결하고 있어요. 임의의 위치로 저장하지 않아요. 다른 정보는 입력해 둘 수 있어요."
+          onSearchAddresses={(query, signal) =>
+            searchCustomerAddresses(inquiryId, inquiryToken, query, signal)
           }
+          onSelectAddress={setAddressMatch}
+          addressHint="새 주소는 검색 결과에서 선택해 주세요."
           onBackToChat={(value) => {
             setDraft({
               visit: value,
               version: draft?.version ?? snapshot.version,
+              addressMatch,
             });
             setEditing(false);
           }}
@@ -107,16 +147,19 @@ export default function CustomerVisit({
             setDraft({
               visit: value,
               version: draft?.version ?? snapshot.version,
+              addressMatch,
             });
             if (conflict)
               throw new VisitInputError(
                 "최신 방문정보를 확인한 뒤 가져와 주세요. 작성하던 내용은 그대로 있어요.",
               );
-            if (
-              !snapshot.coordinates ||
-              !snapshot.visit.address ||
-              value.address.trim() !== snapshot.visit.address.trim()
-            )
+            const coordinates =
+              addressMatch?.address === value.address.trim()
+                ? { lat: addressMatch.lat, lng: addressMatch.lng }
+                : value.address.trim() === snapshot.visit.address.trim()
+                  ? snapshot.coordinates
+                  : null;
+            if (!coordinates)
               throw new VisitInputError(
                 "주소 검색 결과가 있어야 방문정보를 저장할 수 있어요. 입력은 남겨 뒀어요.",
                 { address: "확인된 주소와 위치가 필요해요." },
@@ -129,11 +172,20 @@ export default function CustomerVisit({
                 inquiryToken,
                 draft?.version ?? snapshot.version,
                 value,
-                snapshot.coordinates,
+                coordinates,
                 controller.signal,
               );
               if (controller.signal.aborted) return;
-              setSnapshot({ ...snapshot, version, visit: value });
+              setSnapshot({
+                ...snapshot,
+                version,
+                visit: value,
+                coordinates,
+                phoneVerified:
+                  snapshot.phoneVerified &&
+                  snapshot.visit.phone.replace(/\D/g, "") ===
+                    value.phone.replace(/\D/g, ""),
+              });
               setDraft({ visit: value, version });
               setSaved(true);
               setEditing(false);
@@ -166,6 +218,36 @@ export default function CustomerVisit({
       </>
     );
 
+  if (showBooking && snapshot)
+    return (
+      <CustomerBooking
+        businessName={business.name}
+        phoneVerified={snapshot.phoneVerified}
+        onBack={() => {
+          setShowBooking(false);
+          setAttempt((value) => value + 1);
+        }}
+        onLoad={loadBooking}
+        onConfirm={(slot, key, signal) =>
+          confirmCustomerVisit(inquiryId, inquiryToken, slot, key, signal)
+        }
+        onExisting={(signal, id) =>
+          getCustomerReservation(
+            id ?? snapshot.reservationId ?? 0,
+            inquiryToken,
+            signal,
+          )
+        }
+        renderVerification={(verified) => (
+          <CustomerVerificationForm
+            target={{ purpose: "CUSTOMER_VERIFY", inquiryId, inquiryToken }}
+            readPhone={readBookingPhone}
+            onVerified={verified}
+          />
+        )}
+      />
+    );
+
   return (
     <>
       {saved && (
@@ -194,6 +276,21 @@ export default function CustomerVisit({
         demo={false}
         onBack={() => onBack(draft)}
         onVisit={snapshot ? () => setEditing(true) : undefined}
+        waitingForOwner={
+          bookingEnabled &&
+          snapshot?.bookingStage === "owner-review" &&
+          !snapshot.reservationId
+        }
+        onBooking={
+          bookingEnabled &&
+          snapshot &&
+          (snapshot.reservationId ||
+            (snapshot.bookingStage === "candidate" &&
+              snapshot.coordinates &&
+              snapshot.visit.phone))
+            ? () => setShowBooking(true)
+            : undefined
+        }
       />
     </>
   );
