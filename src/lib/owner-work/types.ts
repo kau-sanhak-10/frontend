@@ -49,15 +49,22 @@ export type WorkNote = {
 export type NotificationEvent =
   "NEW_RESERVATION" | "NEEDS_CHECK" | "CHANGE" | "CANCEL";
 
+/**
+ * 알림 목록에 보여 줄 종류. 서버 알림 유형(9가지)을 수신 설정 4종류로 묶고,
+ * 어디에도 속하지 않는 것(처리 결과 등)은 OTHER로 둡니다. (FE-16)
+ */
+export type NotificationKind = NotificationEvent | "OTHER";
+
 /** 사장님 알림 한 건 (B-26 · notification, recipient = OWNER) */
 export type OwnerNotification = {
   id: string;
   businessId: string;
-  event: NotificationEvent;
+  event: NotificationKind;
   /** 안전 관련 확인 요청이면 일반 알림과 따로 보여 줍니다. */
   safety: boolean;
   refType: "INQUIRY" | "RESERVATION";
   refId: string;
+  /** 목업은 예시 문구, 실제 서버는 eventType으로 화면이 만든 문구입니다. */
   title: string;
   body: string;
   createdAt: number;
