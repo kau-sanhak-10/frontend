@@ -52,6 +52,8 @@ try {
   let reconcileFailures = 0;
   let autoBookingEnabled = true;
   let expectedBusinessName = "새 업체명";
+  let nextLocation = {};
+  let areas = [];
   await context.route("**/*", async (route) => {
     const request = route.request();
     const { origin, pathname } = new URL(request.url());
@@ -128,12 +130,31 @@ try {
         return reply({ workTypes: [] });
       case "GET /api/v1/owner/service-areas":
         assert.equal(request.headers().authorization, "Bearer own_test");
-        return reply({ serviceAreas: [] });
+        return reply({ serviceAreas: areas });
+      case "GET /api/v1/owner/addresses":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        assert.equal(
+          new URL(request.url()).searchParams.get("query"),
+          "덕양로 1",
+        );
+        return reply({
+          addresses: [{ address: "테스트 출발지", lat: 37.5, lng: 127 }],
+        });
+      case "GET /api/v1/owner/regions":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        return reply({
+          regions: [{ regionCode: "41281", regionName: "고양시 덕양구" }],
+        });
+      case "PUT /api/v1/owner/service-areas":
+        assert.equal(request.headers().authorization, "Bearer own_test");
+        areas = request.postDataJSON().serviceAreas;
+        return reply({ serviceAreas: areas });
       case "PUT /api/v1/owner/business":
         assert.equal(request.headers().authorization, "Bearer own_test");
         assert.deepEqual(request.postDataJSON(), {
           ...business,
           businessName: expectedBusinessName,
+          ...nextLocation,
         });
         if (++businessWrites === 1) return reply(null, 503, "UNAVAILABLE");
         business = request.postDataJSON();
@@ -429,6 +450,32 @@ try {
   assert.equal(business.contactPhone, "0212345678");
   assert.equal(business.businessName, expectedBusinessName);
   assert.equal(businessWrites, 3);
+  await page.getByLabel("새 출발지 검색어").fill("덕양로 1");
+  await page.getByRole("button", { name: "출발지 검색", exact: true }).click();
+  await page.getByRole("button", { name: "테스트 출발지 선택" }).click();
+  nextLocation = { address: "테스트 출발지", lat: 37.5, lng: 127 };
+  await saveSettings.click();
+  await page.getByText("이 항목을 저장했어요.", { exact: true }).waitFor();
+  assert.equal(business.address, "테스트 출발지");
+  await page.getByRole("button", { name: "설정 목록으로" }).click();
+  await page.getByRole("button", { name: /방문지역.*지역/ }).click();
+  await page.getByLabel("방문지역 검색어").fill("고양시");
+  await page
+    .getByRole("button", { name: "방문지역 검색", exact: true })
+    .click();
+  await page.getByRole("button", { name: "고양시 덕양구 선택" }).click();
+  await page.getByText("고양시 덕양구", { exact: true }).waitFor();
+  await saveSettings.click();
+  await page
+    .getByRole("status")
+    .filter({ hasText: "이 항목을 저장했어요." })
+    .waitFor();
+  assert.deepEqual(areas, [
+    { regionCode: "41281", regionName: "고양시 덕양구" },
+  ]);
+  await page.reload();
+  await page.getByRole("button", { name: /방문지역.*1개/ }).click();
+  await page.getByText("고양시 덕양구", { exact: true }).waitFor();
   await page.getByRole("button", { name: "설정 목록으로" }).click();
   await page.getByRole("link", { name: "내 계정으로" }).click();
   const logout = page.getByRole("button", { name: "로그아웃" });

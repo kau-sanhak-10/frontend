@@ -2,9 +2,10 @@ import { requestApi } from "./api.ts";
 import {
   isVisitSlot,
   readAvailableVisits,
-  readConfirmedVisit,
+  readBookingResult,
   type VisitSlot,
 } from "./customer-booking.ts";
+import { asRecord, validId } from "./customer-verification.ts";
 
 function access(id: number, token: string) {
   if (!Number.isSafeInteger(id) || id <= 0 || !/^inq_[^\s]+$/.test(token))
@@ -53,7 +54,7 @@ export async function confirmCustomerVisit(
   )
     throw new Error("예약 요청 식별자를 확인해 주세요.");
   // 선택값만으로 예약 확정 여부를 판단하지 않는다. 같은 요청 재시도에는 같은 키를 쓴다.
-  return readConfirmedVisit(
+  return readBookingResult(
     await requestApi(`${path}/reservations`, {
       method: "POST",
       headers: {
@@ -64,5 +65,24 @@ export async function confirmCustomerVisit(
       body: JSON.stringify({ startAt: selected.startAt }),
       signal,
     }),
+    true,
   );
+}
+
+export async function getCustomerReservation(
+  reservationId: number,
+  token: string,
+  signal: AbortSignal,
+) {
+  if (!validId(reservationId) || !/^(inq|cus)_[A-Za-z0-9_-]+$/.test(token))
+    throw new Error("예약 접근을 확인해 주세요.");
+  const raw = asRecord(
+    await requestApi(`/api/v1/customer/reservations/${reservationId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    }),
+  );
+  if (raw.reservationId !== reservationId || typeof raw.address !== "string")
+    throw new Error("예약 상세를 확인하지 못했어요.");
+  return { ...readBookingResult(raw), address: raw.address };
 }
