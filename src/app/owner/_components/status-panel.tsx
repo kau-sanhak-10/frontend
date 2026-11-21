@@ -4,6 +4,7 @@ type StatusPanelProps = {
   title: string;
   body: string;
   tone?: "info" | "error";
+  icon?: React.ReactNode;
   children?: React.ReactNode;
 };
 
@@ -12,6 +13,7 @@ export function StatusPanel({
   title,
   body,
   tone = "info",
+  icon = "!",
   children,
 }: StatusPanelProps) {
   return (
@@ -20,7 +22,7 @@ export function StatusPanel({
         className={`${styles.panelIcon} ${tone === "error" ? styles.panelIconError : ""}`}
         aria-hidden="true"
       >
-        !
+        {icon}
       </span>
       <h2 className={styles.panelTitle}>{title}</h2>
       <p className={styles.panelBody}>{body}</p>

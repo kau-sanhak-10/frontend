@@ -1,0 +1,234 @@
+main.page {
+  gap: 16px;
+  min-height: calc(100dvh - 43px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  margin: 0 -20px;
+  padding: 0 20px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.iconButton {
+  display: inline-grid;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  place-items: center;
+  cursor: pointer;
+}
+
+.add {
+  margin-left: auto;
+}
+
+.dateHeader,
+.entryTitle {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.dateTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.weekActions {
+  display: flex;
+  gap: 5px;
+}
+
+.weekActions button,
+.week button,
+.formSwitch button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sub);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.week button {
+  display: grid;
+  min-height: 60px;
+  place-items: center;
+  gap: 2px;
+}
+
+.week strong {
+  color: var(--text);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.week button[aria-pressed="true"],
+.primary {
+  background: var(--primary);
+  color: var(--text);
+}
+
+.week button[aria-pressed="true"] {
+  color: var(--text);
+}
+
+.timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timelineRow {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.timelineRow:hover .entryTitle strong {
+  text-decoration: underline;
+}
+
+.time {
+  display: grid;
+  align-content: start;
+  font-variant-numeric: tabular-nums;
+}
+
+.time strong {
+  font-size: 1.125rem;
+}
+
+.time small,
+.entry small {
+  font-size: 0.75rem;
+}
+
+.entry {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  padding: 0 0 16px 16px;
+  border-left: 1px solid var(--border);
+  color: var(--sub);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.entry::before {
+  position: absolute;
+  top: 11px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sub);
+  content: "";
+}
+
+.entry[data-status="확정"]::before {
+  background: var(--primary-deep);
+}
+
+.entry[data-status="취소"] .entryTitle strong {
+  text-decoration: line-through;
+}
+
+.entryTitle strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.entry[data-status="확정"] small,
+.entry[data-status^="변경"] small {
+  color: var(--primary-deep);
+}
+
+.travel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 0 74px;
+  padding: 5px 0 12px 15px;
+  border-left: 1px solid var(--border);
+  color: var(--sub);
+  font-size: 0.8125rem;
+}
+
+.formSwitch,
+.twoColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.twoColumns input {
+  min-width: 0;
+}
+
+.formSwitch button[aria-pressed="true"] {
+  background: var(--soft);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.primary,
+.secondary {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary {
+  border-color: var(--border);
+  background: #fff;
+  color: var(--text);
+}
+
+.confirm {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+}
+
+.page button:focus-visible,
+.page input:focus-visible,
+.page select:focus-visible {
+  outline: 2px solid var(--primary-deep);
+  outline-offset: 2px;
+}
