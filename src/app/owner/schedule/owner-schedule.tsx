@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -16,27 +17,31 @@ import { useLoad } from "../_components/use-load";
 import auth from "../_components/owner-auth.module.css";
 import shared from "../_components/owner-inquiries.module.css";
 import styles from "./schedule.module.css";
-import { areaOf, formatClock } from "@/lib/owner-inquiries/format";
+import { areaOf } from "@/lib/owner-inquiries/format";
+import { ApiError } from "@/lib/api";
+import {
+  clearSession,
+  getSessionSnapshot,
+  snapshotToState,
+} from "@/lib/owner-auth/session";
 import { fetchInquiries } from "@/lib/owner-inquiries/mock-api";
+import { sourceKey, type InquirySource } from "@/lib/owner-inquiries/source";
+import type { LoadResult } from "@/lib/owner-inquiries/types";
+import {
+  loadOwnerSchedule,
+  scheduleIssue,
+  scheduleDate as keyOf,
+  scheduleClock as formatClock,
+  scheduleIso,
+  seoul,
+  shiftDay as addDays,
+  type ScheduleItem as Item,
+} from "@/lib/owner-schedule-api";
 import { emptyVisitInfo, validateVisitInfo } from "@/lib/customer-intake";
 import { createClientId } from "@/lib/customer-consultation";
-import {
-  MINUTE,
-  checkSchedule,
-  type Slot,
-} from "@/lib/owner-inquiries/schedule";
+import { MINUTE, checkSchedule } from "@/lib/owner-inquiries/schedule";
+import { LiveScheduleForm } from "./live-schedule-form";
 
-type Item = Slot & {
-  id: string;
-  kind: "visit" | "block";
-  name: string;
-  title: string;
-  address?: string;
-  source?: "AI 접수" | "전화" | "문자·메신저" | "기타";
-  status: "확정" | "변경 요청" | "변경 제안" | "완료" | "취소" | "차단";
-  travel?: "unknown" | { distance: number; minutes: number };
-  memo?: string;
-};
 type Mode = "visit" | "block" | "detail" | "change" | "cancel" | "correct";
 const headings: Record<Mode, string> = {
   visit: "일정 추가",
@@ -47,55 +52,111 @@ const headings: Record<Mode, string> = {
   correct: "완료 기록 정정",
 };
 const days = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: seoul,
   month: "long",
   day: "numeric",
   weekday: "long",
 });
-const weekdays = new Intl.DateTimeFormat("ko-KR", { weekday: "short" });
-const keyOf = (day: Date | number) => {
-  const d = new Date(day);
-  return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
-    .map((part) => String(part).padStart(2, "0"))
-    .join("-");
-};
+const weekdays = new Intl.DateTimeFormat("ko-KR", {
+  weekday: "short",
+  timeZone: seoul,
+});
 const toTime = (day: string, time: string) =>
-  new Date(`${day}T${time}`).getTime();
-function addDays(date: string, amount: number) {
-  const d = new Date(toTime(date, "12:00"));
-  d.setDate(d.getDate() + amount);
-  return keyOf(d);
-}
+  Date.parse(scheduleIso(day, time));
 
 function weekStart(date: string) {
-  const weekday = new Date(toTime(date, "12:00")).getDay();
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   return addDays(date, -((weekday + 6) % 7));
 }
 
 export function OwnerSchedule() {
   return (
     <OwnerGate screenName="일정">
-      {({ source }) =>
-        source.kind === "mock" ? (
-          <Schedule key={source.businessId} businessId={source.businessId} />
-        ) : (
-          <main className={auth.page}>
-            <StatusPanel
-              title="일정 연결을 준비하고 있어요."
-              body="실제 방문 일정은 서버 연결 후 확인할 수 있어요."
-            />
-            <OwnerTabBar current="schedule" />
-          </main>
-        )
-      }
+      {({ source }) => <Schedule key={sourceKey(source)} source={source} />}
     </OwnerGate>
   );
 }
 
-function Schedule({ businessId }: { businessId: string }) {
-  const fetcher = useCallback(() => fetchInquiries(businessId), [businessId]);
-  const { result, loadedAt, reload } = useLoad(fetcher);
+type PreviewRows = Extract<
+  Awaited<ReturnType<typeof fetchInquiries>>,
+  { ok: true }
+>["data"];
+type ScheduleRows =
+  | { kind: "mock"; inquiries: PreviewRows }
+  | { kind: "live"; from: string; items: Item[] };
+
+const kmFormat = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
+
+function travelLabel(travel: Item["travel"], timeline = false) {
+  if (!travel || travel === "unknown") return "이동시간 확인 필요";
+  const duration = `예상 이동 ${travel.minutes}분`;
+  if (travel.distance !== undefined)
+    return `${timeline ? `이전 현장에서 약 ${travel.minutes}분` : duration} · ${travel.distance}km (예시)`;
+  const meters = travel.distanceMeters;
+  const distance =
+    meters === undefined
+      ? ""
+      : meters < 1000
+        ? ` · ${meters}m`
+        : ` · ${kmFormat.format(meters / 1000)}km`;
+  return `${duration}${distance}${travel.conflict ? " · 이동시간 부족" : ""}`;
+}
+
+function Schedule({ source }: { source: InquirySource }) {
+  const router = useRouter();
+  const token = source.kind === "live" ? source.token : null;
+  const businessId = source.kind === "mock" ? source.businessId : null;
+  const [today] = useState(() => keyOf(Date.now()));
   const [selected, select] = useState("");
   const [week, setWeek] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loadMessage, setLoadMessage] = useState("");
+  const date = selected || today;
+  const first = week || weekStart(today);
+  const liveRange = token ? first : "";
+  const handleError = useCallback(
+    (error: unknown) => {
+      if (!(error instanceof ApiError) || error.status !== 401 || !token)
+        return;
+      const current = snapshotToState(getSessionSnapshot());
+      if (
+        current.status === "active" &&
+        current.session.accessToken === token
+      ) {
+        clearSession();
+        router.replace("/owner/login?reason=expired");
+      }
+    },
+    [token, router],
+  );
+  const fetcher = useCallback(async (): Promise<LoadResult<ScheduleRows>> => {
+    if (!token && businessId) {
+      const data = await fetchInquiries(businessId);
+      return data.ok
+        ? { ok: true, data: { kind: "mock", inquiries: data.data } }
+        : data;
+    }
+    if (!token) return { ok: false, code: "LOAD_FAILED" };
+    try {
+      const items = await loadOwnerSchedule(
+        token,
+        liveRange,
+        addDays(liveRange, 6),
+      );
+      return { ok: true, data: { kind: "live", from: liveRange, items } };
+    } catch (error) {
+      handleError(error);
+      setLoadMessage(scheduleIssue(error));
+      return { ok: false, code: "LOAD_FAILED" };
+    }
+  }, [businessId, token, liveRange, handleError]);
+  const { result: response, reload } = useLoad(fetcher);
+  const result =
+    response?.ok &&
+    response.data.kind === "live" &&
+    response.data.from !== first
+      ? null
+      : response;
   const [edits, setEdits] = useState<Record<string, Item | null>>({});
   const [view, setView] = useState<{ mode: Mode; item?: Item } | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -106,12 +167,11 @@ function Schedule({ businessId }: { businessId: string }) {
     if (mode || previousMode.current) heading.current?.focus();
     previousMode.current = mode;
   }, [mode]);
-  const today = loadedAt ? keyOf(loadedAt) : "";
-  const date = selected || today;
-  const first = week || (today ? weekStart(today) : "");
   const items = new Map<string, Item>();
-  if (result?.ok) {
-    for (const inquiry of result.data) {
+  if (result?.ok && result.data.kind === "live") {
+    for (const item of result.data.items) items.set(item.id, item);
+  } else if (result?.ok && result.data.kind === "mock") {
+    for (const inquiry of result.data.inquiries) {
       const visit = inquiry.reservation;
       if (!visit) continue;
       items.set(inquiry.id, {
@@ -133,7 +193,7 @@ function Schedule({ businessId }: { businessId: string }) {
           : undefined,
       });
     }
-    if (businessId === "biz-hanbit" && result.data.length && today) {
+    if (businessId === "biz-hanbit" && result.data.inquiries.length) {
       items.set("completed-example", {
         id: "completed-example",
         kind: "visit",
@@ -162,7 +222,12 @@ function Schedule({ businessId }: { businessId: string }) {
   }
   const all = [...items.values()];
   const daily = all
-    .filter((item) => keyOf(item.startAt) === date)
+    .filter((item) =>
+      item.kind === "block"
+        ? item.startAt < toTime(addDays(date, 1), "00:00") &&
+          item.endAt > toTime(date, "00:00")
+        : keyOf(item.startAt) === date,
+    )
     .sort((a, b) => a.startAt - b.startAt);
   const visits = daily.filter(
     (item) => item.kind === "visit" && item.status !== "취소",
@@ -181,6 +246,15 @@ function Schedule({ businessId }: { businessId: string }) {
     setView(null);
   }
 
+  function savedLive(savedDate: string, message: string) {
+    setFeedback(message);
+    setView(null);
+    select(savedDate);
+    const nextWeek = weekStart(savedDate);
+    if (nextWeek === first) void reload();
+    else setWeek(nextWeek);
+  }
+
   return (
     <main className={`${auth.page} ${shared.withTabBar} ${styles.page}`}>
       <header className={styles.header}>
@@ -189,7 +263,11 @@ function Schedule({ businessId }: { businessId: string }) {
             type="button"
             className={styles.iconButton}
             aria-label="일정으로 돌아가기"
-            onClick={() => setView(null)}
+            disabled={saving}
+            onClick={() => {
+              setView(null);
+              if (token) void reload();
+            }}
           >
             <Icon name="back" />
           </button>
@@ -227,27 +305,27 @@ function Schedule({ businessId }: { businessId: string }) {
               작업 {Math.round((view.item.endAt - view.item.startAt) / MINUTE)}
               분
             </p>
-            <p className={auth.hint}>
-              {typeof view.item.travel === "object"
-                ? `예상 이동 ${view.item.travel.minutes}분 · ${view.item.travel.distance}km (예시)`
-                : "이동시간 미확인"}
-            </p>
+            <p className={auth.hint}>{travelLabel(view.item.travel)}</p>
             {view.item.memo ? (
               <p className={auth.info}>{view.item.memo}</p>
             ) : null}
-            {view.item.id.startsWith("inq-") ? (
-              <Link href={`/owner/inquiries/${view.item.id}`}>
+            {view.item.inquiryId || view.item.id.startsWith("inq-") ? (
+              <Link
+                href={`/owner/inquiries/${view.item.inquiryId ?? view.item.id}`}
+              >
                 고객 접수 보기
               </Link>
             ) : null}
-            {view.item.status === "완료" ? (
+            {view.item.status === "완료" && !token ? (
               <button
                 className={styles.secondary}
                 onClick={() => setView({ mode: "correct", item: view.item })}
               >
                 완료 기록 정정
               </button>
-            ) : view.item.status !== "취소" ? (
+            ) : view.item.status === "확정" ||
+              view.item.status === "변경 요청" ||
+              view.item.status === "변경 제안" ? (
               <>
                 <button
                   className={styles.secondary}
@@ -262,13 +340,25 @@ function Schedule({ businessId }: { businessId: string }) {
                   예약 취소
                 </button>
               </>
-            ) : (
+            ) : view.item.status === "취소" ? (
               <p className={auth.info}>
                 취소된 방문입니다. 일정 시간을 차지하지 않아요.
               </p>
-            )}
+            ) : null}
           </section>
-        ) : view.mode !== "detail" ? (
+        ) : token && view.mode !== "detail" && view.mode !== "correct" ? (
+          <LiveScheduleForm
+            key={`${view.mode}:${view.item?.id ?? date}`}
+            token={token}
+            mode={view.mode}
+            item={view.item}
+            date={date}
+            open={(mode) => setView({ mode })}
+            onSaved={savedLive}
+            onPending={setSaving}
+            onError={handleError}
+          />
+        ) : !token && view.mode !== "detail" ? (
           <ScheduleForm
             key={`${view.mode}:${view.item?.id ?? date}`}
             mode={view.mode}
@@ -294,7 +384,9 @@ function Schedule({ businessId }: { businessId: string }) {
             <StatusPanel
               tone="error"
               title="일정을 불러오지 못했어요."
-              body="다시 시도해 주세요. 기존 일정은 그대로예요."
+              body={
+                loadMessage || "다시 시도해 주세요. 기존 일정은 그대로예요."
+              }
               icon={<Icon name="info" />}
             >
               <button
@@ -373,9 +465,7 @@ function Schedule({ businessId }: { businessId: string }) {
                       {item.travel && item.status !== "취소" ? (
                         <p className={styles.travel}>
                           <Icon name="pin" />
-                          {item.travel === "unknown"
-                            ? "이동시간 확인 필요"
-                            : `이전 현장에서 약 ${item.travel.minutes}분 · ${item.travel.distance}km (예시)`}
+                          {travelLabel(item.travel, true)}
                         </p>
                       ) : null}
                       <button

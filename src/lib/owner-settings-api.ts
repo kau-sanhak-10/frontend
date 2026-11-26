@@ -208,7 +208,16 @@ export function saveWorkTypes(
     "work-types",
     workTypes,
     "PUT",
-    { workTypes: value },
+    {
+      workTypes: value.map(
+        ({ workCategory, isActive, durationMinutes, autoBookingAllowed }) => ({
+          workCategory,
+          isActive,
+          durationMinutes,
+          autoBookingAllowed,
+        }),
+      ),
+    },
     signal,
   );
 }

@@ -242,7 +242,7 @@ try {
     assert.equal(await loadFailure.count(), 0);
   } else await loadFailure.waitFor();
 
-  // A live session must never mount the local-only schedule or allow mock writes.
+  // This fixture blocks the API: a live session must fail closed, not load mock data.
   await page.evaluate(() => {
     window.sessionStorage.setItem(
       "ilro.owner.session",
@@ -257,9 +257,7 @@ try {
     );
   });
   await page.goto(`${base}/owner/schedule`);
-  await page
-    .getByRole("heading", { name: "일정 연결을 준비하고 있어요." })
-    .waitFor();
+  await loadFailure.waitFor();
   assert.equal(
     await page.getByRole("region", { name: "날짜별 일정" }).count(),
     0,

@@ -30,6 +30,7 @@ export type BookingSettings = {
   autoBookingEnabled: boolean;
 };
 export type WorkType = {
+  workTypeId?: number | null;
   workCategory: WorkCategory;
   isActive: boolean;
   durationMinutes: number;
