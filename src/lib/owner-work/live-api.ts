@@ -1,8 +1,15 @@
 // 사장님 업무 알림·수신 설정·Web Push 구독 실제 API (BE-14 · FE-16)
-// 방문 작업·메모·완료(BE-13) API는 아직 없어서 여기에는 알림 관련 API만 있습니다.
+// 방문 작업·메모·완료(BE-13 · B-23~B-25) API도 여기 있습니다.
 import { ApiError, requestApi } from "../api.ts";
 import {
   mapNotification,
+  mapReservationDetail,
+  mapSchedule,
+  mapWorkNote,
+  visitRange,
+  type ServerReservationDetail,
+  type ServerSchedule,
+  type ServerWorkNote,
   mapPrefs,
   prefsRequest,
   type ServerNotification,
@@ -11,7 +18,9 @@ import {
 import type {
   NotificationPrefs,
   OwnerNotification,
+  Visit,
   WorkLoadResult,
+  WorkNote,
   WorkSaveResult,
 } from "./types";
 
@@ -198,5 +207,184 @@ export async function unsubscribePushLive(
     return { ok: true, data: null };
   } catch (error) {
     return pushFailure(error);
+  }
+}
+
+// ── 방문 작업 (B-23) ─────────────────────────────
+
+const reservationPath = (id: string, tail = "") =>
+  `/api/v1/owner/reservations/${encodeURIComponent(id)}${tail}`;
+
+/** 방문 일정: 지난 7일 ~ 앞으로 23일의 방문 (서버 일정 API, 최대 31일) */
+export async function fetchVisitsLive(
+  token: string,
+  now = Date.now(),
+): Promise<WorkLoadResult<Visit[]>> {
+  const { from, to } = visitRange(now);
+  try {
+    const res = await requestApi<ServerSchedule>(
+      `/api/v1/owner/schedule?from=${from}&to=${to}`,
+      { headers: auth(token) },
+    );
+    return { ok: true, data: mapSchedule(res) };
+  } catch (error) {
+    return loadFailure(error);
+  }
+}
+
+/** 방문 작업정보. 다른 업체 예약이면 서버가 404로 숨깁니다. */
+export async function fetchVisitLive(
+  token: string,
+  visitId: string,
+): Promise<WorkLoadResult<Visit>> {
+  try {
+    const res = await requestApi<ServerReservationDetail>(
+      reservationPath(visitId),
+      { headers: auth(token) },
+    );
+    return { ok: true, data: mapReservationDetail(res) };
+  } catch (error) {
+    return loadFailure(error);
+  }
+}
+
+// ── 작업 메모 (B-24) ─────────────────────────────
+
+export async function fetchWorkNoteLive(
+  token: string,
+  visitId: string,
+): Promise<WorkLoadResult<WorkNote | null>> {
+  try {
+    const res = await requestApi<ServerWorkNote>(
+      reservationPath(visitId, "/work-note"),
+      { headers: auth(token) },
+    );
+    return { ok: true, data: mapWorkNote(res) };
+  } catch (error) {
+    return loadFailure(error);
+  }
+}
+
+/** 메모 전체를 바꿉니다. 빈 내용이면 메모를 비웁니다. */
+export async function saveWorkNoteLive(
+  token: string,
+  visitId: string,
+  content: string,
+  now = Date.now(),
+): Promise<WorkSaveResult<WorkNote>> {
+  try {
+    const res = await requestApi<ServerWorkNote>(
+      reservationPath(visitId, "/work-note"),
+      {
+        method: "PUT",
+        headers: auth(token),
+        body: JSON.stringify({ content: content.trim() }),
+      },
+    );
+    // 비운 메모는 서버가 저장 시각을 주지 않을 수 있어 지금 시각으로 보여 줍니다.
+    return {
+      ok: true,
+      data: mapWorkNote(res) ?? {
+        content: res.content ?? "",
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+  } catch (error) {
+    return saveFailure(error);
+  }
+}
+
+// ── 작업 완료·완료 정정 (B-25) ─────────────────────────────
+
+/** 완료·정정 실패 → 화면 코드 */
+export function workActionFailure(error: unknown): {
+  ok: false;
+  code: Exclude<WorkSaveResult<never>, { ok: true }>["code"];
+} {
+  if (error instanceof ApiError) {
+    if (error.code === "RESERVATION_VERSION_CONFLICT") {
+      return { ok: false, code: "CONFLICT" };
+    }
+    if (error.code === "RESERVATION_NOT_STARTED") {
+      return { ok: false, code: "NOT_STARTED" };
+    }
+    if (
+      error.code === "RESERVATION_CANCELED" ||
+      error.code === "RESERVATION_NOT_COMPLETED" ||
+      error.status === 409 ||
+      error.status === 422
+    ) {
+      return { ok: false, code: "NOT_ALLOWED" };
+    }
+  }
+  return saveFailure(error);
+}
+
+/**
+ * 완료·정정 응답에는 완료 시각이 없어서, 처리 뒤 작업정보를 다시 받아 돌려줍니다.
+ * 다시 받기에 실패하면 응답의 상태·버전만 바꾼 화면 값을 돌려줍니다. (처리 자체는 성공)
+ */
+async function afterAction(
+  token: string,
+  visitId: string,
+  fallback: Visit,
+): Promise<Visit> {
+  const fresh = await fetchVisitLive(token, visitId);
+  return fresh.ok ? fresh.data : fallback;
+}
+
+/** 작업 완료. 이미 완료된 예약이면 서버가 성공으로 답하고 이력을 더 만들지 않습니다. */
+export async function completeVisitLive(
+  token: string,
+  visit: Visit,
+  now = Date.now(),
+): Promise<WorkSaveResult<Visit>> {
+  try {
+    const res = await requestApi<{
+      status: Visit["status"];
+      version: number | null;
+      alreadyCompleted: boolean;
+    }>(reservationPath(visit.id, "/complete"), {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify({ version: visit.version }),
+    });
+    const data = await afterAction(token, visit.id, {
+      ...visit,
+      status: res.status ?? "COMPLETED",
+      version: res.version ?? visit.version,
+      completedAt: visit.completedAt ?? now,
+    });
+    return { ok: true, data };
+  } catch (error) {
+    return workActionFailure(error);
+  }
+}
+
+/** 실수로 한 완료 정정. 예약 확정으로 돌아가고 사유는 예약 이력에 남습니다. */
+export async function correctCompletionLive(
+  token: string,
+  visit: Visit,
+  reason: string,
+): Promise<WorkSaveResult<Visit>> {
+  try {
+    const res = await requestApi<{
+      status: Visit["status"];
+      version: number | null;
+    }>(reservationPath(visit.id, "/complete-correction"), {
+      method: "POST",
+      headers: auth(token),
+      body: JSON.stringify({ version: visit.version, reason: reason.trim() }),
+    });
+    const data = await afterAction(token, visit.id, {
+      ...visit,
+      status: res.status ?? "CONFIRMED",
+      version: res.version ?? visit.version,
+      completedAt: null,
+    });
+    return { ok: true, data };
+  } catch (error) {
+    return workActionFailure(error);
   }
 }

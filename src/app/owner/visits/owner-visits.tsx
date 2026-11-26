@@ -6,7 +6,6 @@ import { OwnerGate } from "../_components/owner-gate";
 import { OwnerTabBar } from "../_components/owner-tab-bar";
 import { StatusPanel } from "../_components/status-panel";
 import { useLoad } from "../_components/use-load";
-import { WorkNotReady } from "../_components/work-not-ready";
 import auth from "../_components/owner-auth.module.css";
 import styles from "../_components/owner-inquiries.module.css";
 import work from "../_components/owner-work.module.css";
@@ -21,33 +20,22 @@ import {
   groupVisits,
   remainingToday,
 } from "@/lib/owner-work/rules";
-import {
-  loadVisits,
-  workSourceOf,
-  type WorkSource,
-} from "@/lib/owner-work/source";
+import { loadVisits, type WorkSource } from "@/lib/owner-work/source";
 import type { Visit } from "@/lib/owner-work/types";
 
 /** 방문 일정 (B-23 ①) · 오늘 방문 순서와 예정 방문 */
 export function OwnerVisits() {
   return (
     <OwnerGate screenName="방문 일정">
-      {({ source }) => {
-        const ws = workSourceOf(source);
-        return (
-          <main className={`${auth.page} ${styles.withTabBar}`}>
-            <header className={auth.header}>
-              <h1 className={auth.headerTitle}>방문 일정</h1>
-            </header>
-            {ws ? (
-              <VisitsBody source={ws} />
-            ) : (
-              <WorkNotReady what="방문 일정" />
-            )}
-            <OwnerTabBar current="schedule" />
-          </main>
-        );
-      }}
+      {({ source }) => (
+        <main className={`${auth.page} ${styles.withTabBar}`}>
+          <header className={auth.header}>
+            <h1 className={auth.headerTitle}>방문 일정</h1>
+          </header>
+          <VisitsBody source={source} />
+          <OwnerTabBar current="schedule" />
+        </main>
+      )}
     </OwnerGate>
   );
 }

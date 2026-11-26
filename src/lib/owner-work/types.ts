@@ -1,6 +1,6 @@
 // 사장님 방문 작업·메모·완료·알림 (FE-13 · B-23~B-27)
 // 백엔드 테이블(reservation, reservation_history, work_note, notification) 구조에 맞춥니다.
-// 사장님용 API가 아직 없어서 지금은 목업(mock-api.ts)으로 동작합니다.
+// 예시 로그인은 목업(mock-api.ts), 실제 로그인은 서버(live-api.ts)로 동작합니다.
 
 /** 예약 상태 (reservation.status) */
 export type VisitStatus = "REQUESTED" | "CONFIRMED" | "COMPLETED" | "CANCELED";
@@ -25,6 +25,10 @@ export type Visit = {
   /** 방문할 때 연락할 번호. 고객 접수 때 받은 번호입니다. */
   contactPhone: string | null;
   address: string;
+  /** 동·호수 등 상세 주소 (실제 서버 상세에서만, 예약 주소가 문의 주소와 같을 때) */
+  addressDetail?: string | null;
+  /** 출입 안내 (공동현관 등, 실제 서버 상세에서만) */
+  accessNote?: string | null;
   startAt: number;
   endAt: number;
   status: VisitStatus;
@@ -86,11 +90,17 @@ export type WorkLoadResult<T> =
  * - NOT_ALLOWED: 지금 상태에서는 할 수 없음 (예: 취소된 예약 완료)
  * - INVALID: 빈 값·너무 긴 값·사유 없음
  * - NOT_FOUND: 없거나 다른 업체 것
+ * - NOT_STARTED: 방문 시작 시각 전이라 아직 완료할 수 없음 (실제 서버)
  */
 export type WorkSaveResult<T> =
   | { ok: true; data: T }
   | {
       ok: false;
       code:
-        "SAVE_FAILED" | "CONFLICT" | "NOT_ALLOWED" | "INVALID" | "NOT_FOUND";
+        | "SAVE_FAILED"
+        | "CONFLICT"
+        | "NOT_ALLOWED"
+        | "INVALID"
+        | "NOT_FOUND"
+        | "NOT_STARTED";
     };

@@ -5,7 +5,6 @@ import { useCallback, useState } from "react";
 import { OwnerGate } from "../../_components/owner-gate";
 import { StatusPanel } from "../../_components/status-panel";
 import { useLoad } from "../../_components/use-load";
-import { WorkNotReady } from "../../_components/work-not-ready";
 import auth from "../../_components/owner-auth.module.css";
 import styles from "../../_components/owner-inquiries.module.css";
 import work from "../../_components/owner-work.module.css";
@@ -23,59 +22,42 @@ import {
   type InquirySource,
 } from "@/lib/owner-inquiries/source";
 import { VISIT_STATUS_LABEL } from "@/lib/owner-work/rules";
-import {
-  loadVisit,
-  workSourceOf,
-  type WorkSource,
-} from "@/lib/owner-work/source";
+import { loadVisit } from "@/lib/owner-work/source";
 import type { Visit } from "@/lib/owner-work/types";
 
 /** 방문 작업 상세 (B-23·B-24·B-25) */
 export function VisitDetailView({ visitId }: { visitId: string }) {
   return (
     <OwnerGate screenName="방문 작업">
-      {({ source }) => {
-        const ws = workSourceOf(source);
-        return (
-          <main className={auth.page}>
-            <header className={styles.detailHeader}>
-              <Link
-                href="/owner/visits"
-                className={auth.backLink}
-                aria-label="방문 일정으로 돌아가기"
-              >
-                ‹
-              </Link>
-              <h1 className={auth.headerTitle}>방문 작업</h1>
-            </header>
-            {ws ? (
-              <VisitBody
-                workSource={ws}
-                inquirySource={source}
-                visitId={visitId}
-              />
-            ) : (
-              <WorkNotReady what="방문 작업" />
-            )}
-          </main>
-        );
-      }}
+      {({ source }) => (
+        <main className={auth.page}>
+          <header className={styles.detailHeader}>
+            <Link
+              href="/owner/visits"
+              className={auth.backLink}
+              aria-label="방문 일정으로 돌아가기"
+            >
+              ‹
+            </Link>
+            <h1 className={auth.headerTitle}>방문 작업</h1>
+          </header>
+          <VisitBody source={source} visitId={visitId} />
+        </main>
+      )}
     </OwnerGate>
   );
 }
 
 function VisitBody({
-  workSource,
-  inquirySource,
+  source,
   visitId,
 }: {
-  workSource: WorkSource;
-  inquirySource: InquirySource;
+  source: InquirySource;
   visitId: string;
 }) {
   const fetcher = useCallback(
-    () => loadVisit(workSource, visitId),
-    [workSource, visitId],
+    () => loadVisit(source, visitId),
+    [source, visitId],
   );
   const { result, loadedAt, reload } = useLoad(fetcher);
   // 완료·정정 후 서버가 돌려준 최신 예약 (다시 불러오면 비웁니다)
@@ -138,11 +120,18 @@ function VisitBody({
             <dt className={styles.fieldLabel}>주소</dt>
             <dd className={styles.fieldValue}>
               {visit.address}
+              {visit.addressDetail ? ` ${visit.addressDetail}` : ""}
               <span className={work.blockNote}>
                 주소가 틀렸다면 예약 변경 절차로 고쳐 주세요.
               </span>
             </dd>
           </div>
+          {visit.accessNote ? (
+            <div className={styles.field}>
+              <dt className={styles.fieldLabel}>출입 안내</dt>
+              <dd className={styles.fieldValue}>{visit.accessNote}</dd>
+            </div>
+          ) : null}
           <div className={styles.field}>
             <dt className={styles.fieldLabel}>연락처</dt>
             <dd className={styles.fieldValue}>
@@ -159,20 +148,16 @@ function VisitBody({
       </section>
 
       {visit.inquiryId ? (
-        <InquiryInfo source={inquirySource} inquiryId={visit.inquiryId} />
+        <InquiryInfo source={source} inquiryId={visit.inquiryId} />
       ) : (
         <p className={auth.info}>
           사장님이 직접 등록한 예약이라 연결된 고객 문의가 없어요.
         </p>
       )}
 
-      <VisitNote source={workSource} visitId={visit.id} />
+      <VisitNote source={source} visitId={visit.id} />
 
-      <VisitCompletion
-        source={workSource}
-        visit={visit}
-        onChanged={setUpdated}
-      />
+      <VisitCompletion source={source} visit={visit} onChanged={setUpdated} />
     </div>
   );
 }

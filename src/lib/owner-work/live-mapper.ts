@@ -5,6 +5,8 @@ import type {
   NotificationKind,
   NotificationPrefs,
   OwnerNotification,
+  Visit,
+  WorkNote,
 } from "./types";
 
 /** 서버 알림 유형 (NotificationEventType) */
@@ -136,4 +138,132 @@ export function prefsRequest(
   const body = {} as Record<NotificationEvent, boolean>;
   for (const type of SETTING_TYPES) body[type] = Boolean(prefs[type]);
   return body;
+}
+
+// ── 방문 작업·메모·완료 (BE-13 · B-23~B-25) ─────────────────────────────
+
+/** 서버 예약 상태 (ReservationStatus) */
+export type ServerVisitStatus =
+  "REQUESTED" | "CONFIRMED" | "COMPLETED" | "CANCELED";
+
+/** 서버 작업 종류 (WorkCategory) */
+export type ServerVisitWork = "INSPECTION" | "REPAIR" | "LEAK" | "REPLACEMENT";
+
+const VISIT_WORK_LABEL: Record<ServerVisitWork, string> = {
+  INSPECTION: "점검",
+  REPAIR: "수리",
+  LEAK: "누수",
+  REPLACEMENT: "보일러 교체",
+};
+
+/** GET /api/v1/owner/schedule 의 방문 한 건 (OwnerScheduleResponse.Visit) */
+export type ServerScheduleVisit = {
+  reservationId: number;
+  status: ServerVisitStatus;
+  startAt: string;
+  endAt: string;
+  workMinutes: number;
+  isManual: boolean;
+  workCategory: ServerVisitWork | null;
+  inquiryId: number | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  address: string | null;
+};
+
+export type ServerSchedule = {
+  from: string;
+  to: string;
+  days: { date: string; visits: ServerScheduleVisit[] | null }[];
+};
+
+/** GET /api/v1/owner/reservations/{id} (OwnerReservationDetailResponse) */
+export type ServerReservationDetail = ServerScheduleVisit & {
+  version: number;
+  addressDetail: string | null;
+  accessNote: string | null;
+  completedAt: string | null;
+};
+
+/** GET·PUT …/work-note (WorkNoteResponse) */
+export type ServerWorkNote = {
+  reservationId: number;
+  content: string | null;
+  updatedAt: string | null;
+};
+
+/** 고객 이름은 첫 글자만 보여 줍니다. (예: 김민수 → 김○○) */
+function visitCustomerLabel(name: string | null): string {
+  const first = name?.trim().at(0);
+  return first ? `${first}○○` : "고객";
+}
+
+function visitWorkLabel(work: ServerVisitWork | null): string {
+  return (work && VISIT_WORK_LABEL[work]) || "작업 종류 미정";
+}
+
+/** 일정 목록의 방문 → 화면 방문. 목록에는 버전·완료 시각이 없어 상세에서 다시 받습니다. */
+export function mapScheduleVisit(v: ServerScheduleVisit): Visit {
+  return {
+    id: String(v.reservationId),
+    businessId: "live",
+    inquiryId: v.inquiryId == null ? null : String(v.inquiryId),
+    customerLabel: visitCustomerLabel(v.customerName),
+    contactPhone: v.customerPhone?.trim() || null,
+    address: v.address?.trim() || "주소 없음",
+    startAt: toTime(v.startAt) ?? 0,
+    endAt: toTime(v.endAt) ?? 0,
+    status: v.status,
+    workType: visitWorkLabel(v.workCategory),
+    completedAt: null,
+    version: 0,
+    history: [],
+  };
+}
+
+/** 일정 응답의 날짜별 방문을 한 줄로 모읍니다. 같은 예약이 두 날에 걸쳐도 한 번만 둡니다. */
+export function mapSchedule(res: ServerSchedule): Visit[] {
+  const seen = new Set<string>();
+  const visits: Visit[] = [];
+  for (const day of res.days ?? []) {
+    for (const v of day.visits ?? []) {
+      const visit = mapScheduleVisit(v);
+      if (seen.has(visit.id)) continue;
+      seen.add(visit.id);
+      visits.push(visit);
+    }
+  }
+  return visits.sort((a, b) => a.startAt - b.startAt);
+}
+
+/** 방문 작업정보 → 화면 방문 (상세는 버전·완료 시각·출입 안내까지 있습니다) */
+export function mapReservationDetail(d: ServerReservationDetail): Visit {
+  return {
+    ...mapScheduleVisit(d),
+    version: d.version,
+    completedAt: toTime(d.completedAt),
+    addressDetail: d.addressDetail?.trim() || null,
+    accessNote: d.accessNote?.trim() || null,
+  };
+}
+
+/** 메모가 아직 없으면(빈 내용·저장 시각 없음) null */
+export function mapWorkNote(n: ServerWorkNote): WorkNote | null {
+  const updatedAt = toTime(n.updatedAt);
+  if (updatedAt === null) return null;
+  // 서버는 처음 쓴 시각을 따로 주지 않아 마지막 저장 시각을 함께 씁니다.
+  return { content: n.content ?? "", createdAt: updatedAt, updatedAt };
+}
+
+const KST_OFFSET = 9 * 3_600_000;
+const DAY_MS = 24 * 3_600_000;
+
+/** 한국 날짜(YYYY-MM-DD) */
+export function kstDate(time: number): string {
+  return new Date(time + KST_OFFSET).toISOString().slice(0, 10);
+}
+
+/** 방문 일정 화면이 불러올 기간: 지난 7일 ~ 앞으로 23일 (서버는 한 번에 31일까지) */
+export function visitRange(now: number): { from: string; to: string } {
+  return { from: kstDate(now - 7 * DAY_MS), to: kstDate(now + 23 * DAY_MS) };
 }
