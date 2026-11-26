@@ -8,6 +8,7 @@ const TABS: { key: TabKey; label: string; href: string | null }[] = [
   { key: "today", label: "오늘", href: "/owner" },
   { key: "inquiries", label: "접수", href: "/owner/inquiries" },
   { key: "schedule", label: "일정", href: "/owner/schedule" },
+  // 업체 화면은 다른 작업에서 만듭니다.
   { key: "business", label: "업체", href: null },
 ];
 const ICONS = {

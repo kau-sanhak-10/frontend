@@ -54,13 +54,9 @@ function OwnerHomeBody({
         <Link href="/owner/account" className={styles.headerAction}>
           내 계정
         </Link>
-        <span
-          className={styles.headerAction}
-          aria-disabled="true"
-          title="알림은 준비 중이에요"
-        >
+        <Link href="/owner/notifications" className={styles.headerAction}>
           알림
-        </span>
+        </Link>
       </header>
 
       {result === null ? (
@@ -144,13 +140,15 @@ function HomeContent({
           <h2 id="home-visits" className={auth.sectionTitle}>
             오늘 방문
           </h2>
-          <span className={styles.groupCount}>
+          {/* 방문 작업(메모·완료)은 일정 탭과 별도 화면이라 여기서 들어갑니다. (FE-13) */}
+          <Link href="/owner/visits" className={styles.groupCount}>
             {visits.length === 0
-              ? "없음"
+              ? "방문 작업 보기"
               : remaining === 0
                 ? "오늘 방문 끝"
-                : `남은 ${remaining}곳`}
-          </span>
+                : `남은 ${remaining}곳`}{" "}
+            ›
+          </Link>
         </div>
         {visits.length === 0 ? (
           <p className={auth.info}>오늘 잡힌 방문은 없어요.</p>
