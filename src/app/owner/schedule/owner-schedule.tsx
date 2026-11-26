@@ -85,12 +85,21 @@ type ScheduleRows =
   | { kind: "mock"; inquiries: PreviewRows }
   | { kind: "live"; from: string; items: Item[] };
 
+const kmFormat = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
+
 function travelLabel(travel: Item["travel"], timeline = false) {
   if (!travel || travel === "unknown") return "이동시간 확인 필요";
   const duration = `예상 이동 ${travel.minutes}분`;
   if (travel.distance !== undefined)
     return `${timeline ? `이전 현장에서 약 ${travel.minutes}분` : duration} · ${travel.distance}km (예시)`;
-  return travel.conflict ? `${duration} · 이동시간 부족` : duration;
+  const meters = travel.distanceMeters;
+  const distance =
+    meters === undefined
+      ? ""
+      : meters < 1000
+        ? ` · ${meters}m`
+        : ` · ${kmFormat.format(meters / 1000)}km`;
+  return `${duration}${distance}${travel.conflict ? " · 이동시간 부족" : ""}`;
 }
 
 function Schedule({ source }: { source: InquirySource }) {

@@ -37,7 +37,13 @@ export type ScheduleItem = {
   status:
     "예약 요청" | "확정" | "변경 요청" | "변경 제안" | "완료" | "취소" | "차단";
   travel?:
-    "unknown" | { distance?: number; minutes: number; conflict?: boolean };
+    | "unknown"
+    | {
+        distance?: number;
+        distanceMeters?: number;
+        minutes: number;
+        conflict?: boolean;
+      };
   memo?: string;
   inquiryId?: number | null;
   serverId?: number;
@@ -55,6 +61,7 @@ type Visit = Period & {
   isManual: boolean;
   activeChange: { status: "REQUESTED" | "PROPOSED" } | null;
   travelMinutes: number | null;
+  travelDistanceMeters?: number | null;
   travelStatus: "OK" | "CONFLICT" | "UNKNOWN" | "NO_ORIGIN";
 };
 
@@ -134,6 +141,7 @@ export async function loadOwnerSchedule(
         status,
         activeChange,
         travelMinutes,
+        travelDistanceMeters,
         travelStatus,
       } = visit;
       const id = `reservation-${reservationId}`;
@@ -166,7 +174,16 @@ export async function loadOwnerSchedule(
           typeof travelMinutes === "number" &&
           Number.isFinite(travelMinutes) &&
           travelMinutes >= 0
-            ? { minutes: travelMinutes, conflict: travelStatus === "CONFLICT" }
+            ? {
+                minutes: travelMinutes,
+                conflict: travelStatus === "CONFLICT",
+                distanceMeters:
+                  typeof travelDistanceMeters === "number" &&
+                  Number.isFinite(travelDistanceMeters) &&
+                  travelDistanceMeters >= 0
+                    ? travelDistanceMeters
+                    : undefined,
+              }
             : travelStatus === "UNKNOWN" || travelStatus === "CONFLICT"
               ? "unknown"
               : undefined,

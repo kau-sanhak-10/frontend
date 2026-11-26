@@ -144,6 +144,7 @@ try {
             isManual: true,
             activeChange: null,
             travelMinutes: 18,
+            travelDistanceMeters: 2400,
             travelStatus: "OK",
           };
           return route.abort();
@@ -212,7 +213,7 @@ try {
   await page.getByText(/요청 결과를 확인하지 못했어요/).waitFor();
   await button("예약 저장").click();
   await page.getByText("방문 예약을 저장했어요.").waitFor();
-  await page.getByText("예상 이동 18분", { exact: true }).waitFor();
+  await page.getByText("예상 이동 18분 · 2.4km", { exact: true }).waitFor();
   const savedVisit = page.getByRole("button", { name: /가상 예약.*작업/ });
   await savedVisit.click();
   await button("변경 시간 제안").click();
@@ -223,11 +224,22 @@ try {
   // Simulate a server-confirmed customer acceptance, not an optimistic owner edit.
   visit.startAt = "2026-11-26T16:00:00+09:00";
   visit.endAt = "2026-11-26T17:00:00+09:00";
+  visit.travelMinutes = 6;
+  visit.travelDistanceMeters = 850;
+  visit.travelStatus = "CONFLICT";
   visit.activeChange = proposal = null;
   version++;
   await page.reload();
   await savedVisit.waitFor();
   assert.match(await savedVisit.innerText(), /16:00/);
+  await page
+    .getByText("예상 이동 6분 · 850m · 이동시간 부족", { exact: true })
+    .waitFor();
+  visit.travelDistanceMeters = null;
+  await page.reload();
+  await page
+    .getByText("예상 이동 6분 · 이동시간 부족", { exact: true })
+    .waitFor();
   await button("일정 추가").click();
   await button("시간 비우기").click();
   await page.getByLabel("사유 (선택)", { exact: true }).fill("검증 차단");
@@ -260,7 +272,7 @@ try {
   await page.waitForURL("**/owner/login?reason=expired");
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: timezone, server save/replay, proposal preserves existing appointment, block warning/reload/delete, cancel and session expiry",
+    "PASS: timezone, server save/replay, travel distance/reload, proposal preserves existing appointment, block warning/reload/delete, cancel and session expiry",
   );
 } finally {
   await browser.close();
