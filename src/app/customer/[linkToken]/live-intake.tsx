@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import {
   createCustomerInquiry,
@@ -12,14 +12,17 @@ import {
   requestCustomerHandoff,
   sendCustomerMessage,
 } from "@/lib/customer-api";
-import type {
-  CustomerMessage,
-  SendCustomerInput,
+import {
+  createClientId,
+  type CustomerMessage,
+  type SendCustomerInput,
 } from "@/lib/customer-consultation";
 import type { IntakeBusiness, IntakeStatus } from "@/lib/customer-intake";
 import CustomerConsultation from "../consultation";
 import CustomerIntake from "../intake";
 import CustomerDemoVisit from "./demo-visit";
+import CustomerLookup from "./lookup";
+import CustomerVisit, { type VisitDraft } from "./visit";
 
 const emptyBusiness: IntakeBusiness = {
   name: "업체 문의",
@@ -45,11 +48,15 @@ export default function CustomerLiveIntake({
   visitDemo,
   photoDemo,
   photoCancel,
+  bookingEnabled,
+  recoveryEnabled,
 }: {
   linkToken: string;
   visitDemo: boolean;
   photoDemo: boolean;
   photoCancel: boolean;
+  bookingEnabled: boolean;
+  recoveryEnabled: boolean;
 }) {
   const validLink = isIntakeLinkToken(linkToken, visitDemo);
   const [status, setStatus] = useState<IntakeStatus>(
@@ -59,6 +66,8 @@ export default function CustomerLiveIntake({
   const [attempt, setAttempt] = useState(0);
   // ponytail: 현재 화면에만 문의 토큰을 유지. 새로고침·기기 변경 복구는 FE-20 인증에 연결한다.
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
+  const [showLookup, setShowLookup] = useState(false);
+  const startKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (!validLink) return;
@@ -78,32 +87,69 @@ export default function CustomerLiveIntake({
   if (inquiry)
     return (
       <LiveConsultation
+        key={inquiry.inquiryToken}
         business={business}
         inquiry={inquiry}
         visitDemo={visitDemo}
         photoDemo={photoDemo}
         photoCancel={photoCancel}
+        bookingEnabled={bookingEnabled}
+      />
+    );
+  if (showLookup)
+    return (
+      <CustomerLookup
+        linkToken={linkToken}
+        bookingEnabled={bookingEnabled}
+        recoveryEnabled={recoveryEnabled}
+        onRestore={(value) => {
+          setShowLookup(false);
+          setInquiry(value);
+        }}
+        onBack={() => setShowLookup(false)}
       />
     );
   return (
     <CustomerIntake
       business={business}
       status={status}
-      textOnly
+      textOnly={visitDemo}
       visitDemo={visitDemo}
       photosEnabled={photoDemo}
+      onLookup={
+        validLink &&
+        (status === "ready" || status === "paused") &&
+        (bookingEnabled || recoveryEnabled)
+          ? () => setShowLookup(true)
+          : undefined
+      }
       onRetry={() => {
         setStatus("loading");
         setAttempt((value) => value + 1);
       }}
       onStart={async ({ consents }) => {
+        startKey.current ??= createClientId();
         try {
-          const created = await createCustomerInquiry(linkToken, consents);
+          const created = await createCustomerInquiry(
+            linkToken,
+            consents,
+            undefined,
+            startKey.current,
+          );
+          startKey.current = null;
           setInquiry({
             ...created,
             photoConsent: photoDemo && consents.some((c) => c.type === "PHOTO"),
           });
         } catch (error) {
+          if (
+            error instanceof ApiError &&
+            [
+              "IDEMPOTENCY_KEY_REUSED",
+              "INQUIRY_START_RETRY_UNAVAILABLE",
+            ].includes(error.code)
+          )
+            startKey.current = null;
           const status = linkStatus(error);
           if (status !== "error") setStatus(status);
           throw error;
@@ -119,12 +165,14 @@ function LiveConsultation({
   visitDemo,
   photoDemo,
   photoCancel,
+  bookingEnabled,
 }: {
   business: IntakeBusiness;
   inquiry: Inquiry;
   visitDemo: boolean;
   photoDemo: boolean;
   photoCancel: boolean;
+  bookingEnabled: boolean;
 }) {
   const { inquiryId, inquiryToken, expiresAt, photoConsent } = inquiry;
   const [photoUploader] = useState(() =>
@@ -134,6 +182,7 @@ function LiveConsultation({
   const [loadFailed, setLoadFailed] = useState(false);
   const [ended, setEnded] = useState(false);
   const [showVisit, setShowVisit] = useState(false);
+  const [visitDraft, setVisitDraft] = useState<VisitDraft | null>(null);
   const [ownerRequested, setOwnerRequested] = useState(false);
   const [ownerWillReview, setOwnerWillReview] = useState(false);
   const [waitingAfter, setWaitingAfter] = useState<number | null>(null);
@@ -261,11 +310,23 @@ function LiveConsultation({
   }
 
   if (showVisit && !ended)
-    return (
+    return visitDemo ? (
       <CustomerDemoVisit
         inquiryId={inquiryId}
         inquiryToken={inquiryToken}
         onBack={() => setShowVisit(false)}
+      />
+    ) : (
+      <CustomerVisit
+        business={business}
+        inquiryId={inquiryId}
+        inquiryToken={inquiryToken}
+        draft={visitDraft}
+        bookingEnabled={bookingEnabled}
+        onBack={(draft) => {
+          setVisitDraft(draft);
+          setShowVisit(false);
+        }}
       />
     );
 
@@ -279,11 +340,12 @@ function LiveConsultation({
       photosEnabled={photoDemo}
       textOnly
       canContinue={
-        visitDemo &&
-        !ended &&
-        messages.some((message) => message.role === "CUSTOMER")
+        !ended && messages.some((message) => message.role === "CUSTOMER")
       }
-      onContinue={visitDemo && !ended ? () => setShowVisit(true) : undefined}
+      onContinue={!ended ? () => setShowVisit(true) : undefined}
+      continueLabel={
+        visitDemo ? "시연용 방문정보 입력" : "접수 내용·방문정보 확인"
+      }
       liveNotice={
         ended
           ? "이 상담에 더 이상 접근할 수 없어요. 업체에 문의해 주세요."

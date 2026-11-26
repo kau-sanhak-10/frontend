@@ -27,9 +27,16 @@ export default async function Page({
       linkToken={linkToken}
       visitDemo={visitDemo}
       photoDemo={
-        visitDemo && process.env.CUSTOMER_PHOTO_DEMO_ENABLED === "true"
+        process.env.CUSTOMER_PHOTO_ENABLED === "true" ||
+        (visitDemo && process.env.CUSTOMER_PHOTO_DEMO_ENABLED === "true")
       }
       photoCancel={process.env.CUSTOMER_PHOTO_CANCEL_ENABLED === "true"}
+      bookingEnabled={
+        !visitDemo && process.env.CUSTOMER_BOOKING_ENABLED === "true"
+      }
+      recoveryEnabled={
+        !visitDemo && process.env.CUSTOMER_INQUIRY_RECOVERY_ENABLED === "true"
+      }
     />
   );
 }

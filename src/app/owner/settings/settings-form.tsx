@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import type { InputHTMLAttributes, ReactNode } from "react";
+import type { searchOwnerLocation } from "@/lib/owner-settings-api";
 import {
   type SettingsData,
   type SettingsSection,
@@ -63,16 +65,114 @@ function Field({
   );
 }
 
+type Search = (
+  kind: "addresses" | "regions",
+  input: string,
+  signal: AbortSignal,
+) => ReturnType<typeof searchOwnerLocation>;
+
+function LocationSearch({
+  kind,
+  search,
+  onSelect,
+}: {
+  kind: "addresses" | "regions";
+  search: Search;
+  onSelect: (item: Awaited<ReturnType<Search>>[number]) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [results, setResults] = useState<Awaited<ReturnType<Search>> | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const pending = useRef<AbortController | null>(null);
+  useEffect(() => () => pending.current?.abort(), []);
+  async function find() {
+    if (pending.current || !input.trim()) return;
+    const controller = new AbortController();
+    pending.current = controller;
+    setResults(null);
+    setError(false);
+    setBusy(true);
+    try {
+      const items = await search(kind, input, controller.signal);
+      if (!controller.signal.aborted) setResults(items);
+    } catch {
+      if (!controller.signal.aborted) setError(true);
+    } finally {
+      if (pending.current === controller) pending.current = null;
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  }
+  const address = kind === "addresses";
+  return (
+    <div aria-busy={busy}>
+      <Field
+        id="location-search"
+        label={address ? "새 출발지 검색어" : "방문지역 검색어"}
+        value={input}
+        maxLength={100}
+        disabled={busy}
+        onChange={(event) => {
+          setInput(event.target.value);
+          setResults(null);
+          setError(false);
+        }}
+      />
+      <button
+        className={`${common.button} ${common.secondary}`}
+        type="button"
+        disabled={busy || !input.trim()}
+        onClick={() => void find()}
+      >
+        {busy ? "검색 중…" : address ? "출발지 검색" : "방문지역 검색"}
+      </button>
+      {error && (
+        <p role="alert" className={common.error}>
+          검색하지 못했어요. 다시 시도해 주세요.
+        </p>
+      )}
+      {results?.length === 0 && (
+        <p role="status" className={common.hint}>
+          검색 결과가 없어요.
+        </p>
+      )}
+      {results?.map((item, index) => {
+        const label = "address" in item ? item.address : item.regionName;
+        return (
+          <button
+            className={`${common.button} ${common.secondary}`}
+            type="button"
+            key={`${label}-${index}`}
+            onClick={() => {
+              onSelect(item);
+              setResults(null);
+            }}
+          >
+            {label} 선택
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SettingsForm({
   initialData,
   onSave,
+  onReload,
+  onSearchLocation,
   preview = false,
 }: {
   initialData: SettingsData;
   onSave: (
     section: SettingsSection,
     data: SettingsData,
+    saved: SettingsData,
   ) => Promise<SettingsData>;
+  onReload?: () => Promise<SettingsData>;
+  onSearchLocation?: Search;
   preview?: boolean;
 }) {
   const [saved, setSaved] = useState(initialData);
@@ -86,6 +186,7 @@ export default function SettingsForm({
   const [errors, setErrors] = useState<SettingErrors>({});
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [needsReload, setNeedsReload] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const lock = useRef(false);
@@ -119,8 +220,35 @@ export default function SettingsForm({
     setErrors({});
     setNotice("이 항목의 변경을 취소했어요.");
   }
+  async function reconcile() {
+    setNeedsReload(true);
+    try {
+      const current = await onReload!();
+      if (!mounted.current) return;
+      setDraft((values) => refreshSettingsDraft(null, values, saved, current));
+      setSaved(current);
+      setNeedsReload(false);
+      setNotice("서버의 현재 상태를 확인했어요. 작성하던 내용은 유지했어요.");
+    } catch {
+      if (mounted.current)
+        setNotice(
+          "서버 상태를 아직 확인하지 못했어요. 다시 확인한 뒤 저장해 주세요.",
+        );
+    }
+  }
   async function save(form: HTMLFormElement) {
     if (!section || lock.current) return;
+    if (needsReload) {
+      lock.current = true;
+      setBusy(true);
+      try {
+        await reconcile();
+      } finally {
+        lock.current = false;
+        if (mounted.current) setBusy(false);
+      }
+      return;
+    }
     const candidate =
       section === "business"
         ? {
@@ -145,7 +273,9 @@ export default function SettingsForm({
             ? validateBooking(draft.booking)
             : section === "work"
               ? validateWorkTypes(draft.workTypes)
-              : candidate.booking.autoBookingEnabled && autoBookingError
+              : candidate.booking.autoBookingEnabled &&
+                  !saved.booking.autoBookingEnabled &&
+                  autoBookingError
                 ? { auto: autoBookingError }
                 : {};
     setErrors(found);
@@ -159,7 +289,7 @@ export default function SettingsForm({
     lock.current = true;
     setBusy(true);
     try {
-      const result = await onSave(section, candidate);
+      const result = await onSave(section, candidate, saved);
       if (!mounted.current) return;
       setSaved(result);
       setDraft((d) => refreshSettingsDraft(section, d, saved, result));
@@ -168,6 +298,7 @@ export default function SettingsForm({
       );
       setConfirmPause(false);
     } catch (e) {
+      if (section === "intake" && onReload) await reconcile();
       if (mounted.current)
         setErrors({
           save:
@@ -212,7 +343,7 @@ export default function SettingsForm({
         </p>
       )}
       <header className={common.header}>
-        {section && (
+        {section ? (
           <button
             type="button"
             className={common.backLink}
@@ -227,7 +358,20 @@ export default function SettingsForm({
               height={22}
             />
           </button>
-        )}
+        ) : !preview ? (
+          <Link
+            href="/owner/account"
+            className={common.backLink}
+            aria-label="내 계정으로"
+          >
+            <Image
+              src="/owner/settings-back.svg"
+              alt=""
+              width={22}
+              height={22}
+            />
+          </Link>
+        ) : null}
         <h1 ref={heading} tabIndex={-1} className={common.headerTitle}>
           {section ? sections[section] : "업체 설정"}
         </h1>
@@ -291,7 +435,7 @@ export default function SettingsForm({
             void save(e.currentTarget);
           }}
         >
-          <fieldset disabled={busy} className={styles.fields}>
+          <fieldset disabled={busy || needsReload} className={styles.fields}>
             {section === "business" && (
               <>
                 <h2 className={styles.sectionTitle}>
@@ -342,10 +486,27 @@ export default function SettingsForm({
                   error={errors.address}
                 >
                   <p className={common.hint}>
-                    주소 검색 연결 후 변경할 수 있어요. 현재 출발지의 위치
-                    정보는 그대로 유지돼요.
+                    새 출발지는 검색 결과에서 선택한 뒤 저장해 주세요.
                   </p>
                 </Field>
+                {onSearchLocation && (
+                  <LocationSearch
+                    kind="addresses"
+                    search={onSearchLocation}
+                    onSelect={(item) => {
+                      if (!("address" in item)) return;
+                      setDraft((value) => ({
+                        ...value,
+                        business: { ...value.business, ...item },
+                      }));
+                      setErrors((value) => {
+                        const next = { ...value };
+                        delete next.address;
+                        return next;
+                      });
+                    }}
+                  />
+                )}
                 <Field
                   id="serviceDescription"
                   label="제공 서비스 안내 (선택)"
@@ -398,20 +559,22 @@ export default function SettingsForm({
                     {draft.serviceAreas.map((a) => (
                       <li key={a.regionCode}>
                         <span>{a.regionName}</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraft({
-                              ...draft,
-                              serviceAreas: draft.serviceAreas.filter(
-                                (v) => v.regionCode !== a.regionCode,
-                              ),
-                            })
-                          }
-                          aria-label={`${a.regionName} 삭제`}
-                        >
-                          삭제
-                        </button>
+                        {(preview || onSearchLocation) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                serviceAreas: draft.serviceAreas.filter(
+                                  (v) => v.regionCode !== a.regionCode,
+                                ),
+                              })
+                            }
+                            aria-label={`${a.regionName} 삭제`}
+                          >
+                            삭제
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -447,6 +610,29 @@ export default function SettingsForm({
                       </button>
                     ))}
                   </>
+                ) : onSearchLocation ? (
+                  <LocationSearch
+                    kind="regions"
+                    search={onSearchLocation}
+                    onSelect={(item) => {
+                      if (!item.regionCode || !item.regionName) return;
+                      const { regionCode, regionName } = item;
+                      setDraft((value) =>
+                        value.serviceAreas.some(
+                          (area) => area.regionCode === regionCode,
+                        )
+                          ? value
+                          : {
+                              ...value,
+                              serviceAreas: [
+                                ...value.serviceAreas,
+                                { regionCode, regionName },
+                              ],
+                            },
+                      );
+                      setNotice("");
+                    }}
+                  />
                 ) : (
                   <p className={common.info}>
                     지역 검색을 연결한 뒤 방문지역을 추가할 수 있어요.
@@ -716,6 +902,11 @@ export default function SettingsForm({
             )}
             {section === "intake" && (
               <>
+                {!preview && (
+                  <p className={common.info}>
+                    자동 예약과 신규 접수는 하나씩 변경하고 저장해 주세요.
+                  </p>
+                )}
                 <section className={styles.work}>
                   <h2 className={styles.sectionTitle}>자동 예약</h2>
                   <p className={common.hint}>
@@ -726,6 +917,9 @@ export default function SettingsForm({
                     <input
                       type="checkbox"
                       checked={draft.booking.autoBookingEnabled}
+                      disabled={
+                        !preview && draft.intakePaused !== saved.intakePaused
+                      }
                       onChange={(e) => {
                         if (e.target.checked && autoBookingError) {
                           setErrors({ auto: autoBookingError });
@@ -763,6 +957,11 @@ export default function SettingsForm({
                     <input
                       type="checkbox"
                       checked={draft.intakePaused}
+                      disabled={
+                        !preview &&
+                        draft.booking.autoBookingEnabled !==
+                          saved.booking.autoBookingEnabled
+                      }
                       onChange={(e) => {
                         setConfirmPause(e.target.checked);
                         setDraft({ ...draft, intakePaused: e.target.checked });
@@ -796,7 +995,7 @@ export default function SettingsForm({
             <button
               type="button"
               className={`${common.button} ${common.secondary}`}
-              disabled={busy || !selectedDirty}
+              disabled={busy || needsReload || !selectedDirty}
               onClick={cancel}
             >
               취소
@@ -804,9 +1003,13 @@ export default function SettingsForm({
             <button
               className={`${common.button} ${styles.primary}`}
               type="submit"
-              disabled={busy || !selectedDirty}
+              disabled={busy || (!selectedDirty && !needsReload)}
             >
-              {busy ? "저장 중…" : "변경사항 저장"}
+              {busy
+                ? "처리 중…"
+                : needsReload
+                  ? "서버 상태 다시 확인"
+                  : "변경사항 저장"}
             </button>
           </footer>
         </form>

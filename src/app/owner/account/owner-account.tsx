@@ -141,11 +141,18 @@ function LiveAccount({ token }: { token: string }) {
           </button>
         </StatusPanel>
       )}
+      <InstallGuide />
       {error && (
         <p className={styles.error} role="alert">
           {error}
         </p>
       )}
+      <Link
+        href="/owner/settings"
+        className={`${styles.button} ${styles.secondary} ${styles.full}`}
+      >
+        업체 설정
+      </Link>
       <button
         type="button"
         className={`${styles.button} ${styles.secondary} ${styles.full}`}
@@ -271,6 +278,7 @@ function AccountDetails({
         </p>
       </section>
 
+      <InstallGuide />
       <div className={styles.footer}>
         <button
           type="button"
@@ -281,5 +289,24 @@ function AccountDetails({
         </button>
       </div>
     </main>
+  );
+}
+
+function InstallGuide() {
+  return (
+    <details className={`${styles.section} ${styles.installGuide}`}>
+      <summary className={styles.sectionTitle}>홈 화면에 일로 추가</summary>
+      <p>
+        <strong>iPhone Safari</strong> — 공유 → 홈 화면에 추가. ‘웹 앱으로
+        열기’가 보이면 켠 뒤 ‘추가’를 눌러 주세요.
+      </p>
+      <p>
+        <strong>Android Chrome</strong> — 메뉴 → 홈 화면에 추가 → 설치.
+      </p>
+      <p className={styles.hint}>
+        설치 메뉴가 없어도 지금 브라우저에서 계속 사용할 수 있어요. 알림 권한은
+        앱 설치와 별개예요.
+      </p>
+    </details>
   );
 }

@@ -23,6 +23,14 @@ export type VisitInfo = {
 
 export type VisitErrors = Partial<Record<keyof VisitInfo, string>>;
 
+export class VisitInputError extends Error {
+  fields: VisitErrors;
+  constructor(message: string, fields: VisitErrors = {}) {
+    super(message);
+    this.fields = fields;
+  }
+}
+
 export const visitAccessNoteMaxLength = 255;
 
 export const emptyVisitInfo: VisitInfo = {

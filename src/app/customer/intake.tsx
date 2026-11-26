@@ -3,11 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { ApiError } from "@/lib/api";
+import type { CustomerAddress } from "@/lib/customer-api";
 import {
   emptyVisitInfo,
   intakeStatusCopy,
   validateVisitInfo,
   visitAccessNoteMaxLength,
+  VisitInputError,
   type IntakeBusiness,
   type IntakeStatus,
   type VisitErrors,
@@ -34,6 +37,13 @@ type Props = {
   visitDemo?: boolean;
   preview?: boolean;
   previewFailure?: "start" | "visit" | "address" | "region";
+  addressReadOnly?: boolean;
+  addressHint?: string;
+  onSearchAddresses?: (
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<CustomerAddress[]>;
+  onSelectAddress?: (address: CustomerAddress) => void;
 };
 
 // 실제 네트워크·문의 토큰은 상위 연결 화면(FE-08/20)의 책임이다.
@@ -52,12 +62,51 @@ export default function CustomerIntake({
   visitDemo = false,
   preview = false,
   previewFailure,
+  addressReadOnly = false,
+  addressHint,
+  onSearchAddresses,
+  onSelectAddress,
 }: Props) {
   const [step, setStep] = useState<Step>(initialStep);
   const [privacy, setPrivacy] = useState(false);
   const [photo, setPhoto] = useState(false);
   const [consentError, setConsentError] = useState("");
   const [visit, setVisit] = useState<VisitInfo>({ ...initialVisit });
+  const [addressOptions, setAddressOptions] = useState<
+    CustomerAddress[] | null
+  >(null);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressError, setAddressError] = useState("");
+  const addressRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => addressRequest.current?.abort(), []);
+
+  async function findAddress() {
+    const query = visit.address.trim();
+    if (!onSearchAddresses || addressRequest.current) return;
+    if (!query || query.length > 100) {
+      setAddressError("도로명과 건물번호를 100자 이내로 입력해 주세요.");
+      return;
+    }
+    const controller = new AbortController();
+    addressRequest.current = controller;
+    setAddressLoading(true);
+    setAddressOptions(null);
+    setAddressError("");
+    try {
+      const values = await onSearchAddresses(query, controller.signal);
+      if (!controller.signal.aborted) setAddressOptions(values);
+    } catch {
+      if (!controller.signal.aborted)
+        setAddressError(
+          "주소를 검색하지 못했어요. 잠시 후 다시 시도해 주세요.",
+        );
+    } finally {
+      if (addressRequest.current === controller) {
+        addressRequest.current = null;
+        if (!controller.signal.aborted) setAddressLoading(false);
+      }
+    }
+  }
   const [errors, setErrors] = useState<VisitErrors>({});
   const [requestError, setRequestError] = useState("");
   const [pending, setPending] = useState(false);
@@ -102,9 +151,14 @@ export default function CustomerIntake({
         if (previewFailure === "start") throw new Error("preview");
         move("bridge");
       } else await onStart!({ consents });
-    } catch {
+    } catch (error) {
       setRequestError(
-        "상담을 시작하지 못했어요. 선택한 동의는 유지돼요. 다시 시도해 주세요.",
+        error instanceof ApiError && error.code === "IDEMPOTENCY_KEY_REUSED"
+          ? "이전 요청과 동의 항목이 달라요. 한 번 더 누르면 현재 선택으로 새 문의를 시작해요."
+          : error instanceof ApiError &&
+              error.code === "INQUIRY_START_RETRY_UNAVAILABLE"
+            ? "이전 시작 요청을 그대로 이어갈 수 없어요. 한 번 더 누르면 새 문의를 시작해요."
+            : "상담 시작 결과를 확인하지 못했어요. 선택한 동의는 유지돼요. 다시 시도해 주세요.",
       );
     } finally {
       busy.current = false;
@@ -149,10 +203,19 @@ export default function CustomerIntake({
           phone: visit.phone.replace(/[\s-]/g, ""),
           address: visit.address.trim(),
         });
-    } catch {
-      setRequestError(
-        "방문정보를 보내지 못했어요. 입력한 내용은 그대로 있어요. 다시 시도해 주세요.",
-      );
+    } catch (error) {
+      if (error instanceof VisitInputError) {
+        setErrors(error.fields);
+        setRequestError(error.message);
+        form.current
+          ?.querySelector<HTMLInputElement>(
+            `[name="${Object.keys(error.fields)[0]}"]`,
+          )
+          ?.focus();
+      } else
+        setRequestError(
+          "방문정보를 보내지 못했어요. 입력한 내용은 그대로 있어요. 다시 시도해 주세요.",
+        );
     } finally {
       busy.current = false;
       setPending(false);
@@ -174,6 +237,7 @@ export default function CustomerIntake({
       placeholder?: string;
       hint?: string;
       maxLength: number;
+      readOnly?: boolean;
     },
   ) {
     return (
@@ -190,6 +254,7 @@ export default function CustomerIntake({
           autoComplete={options.autoComplete}
           maxLength={options.maxLength}
           placeholder={options.placeholder}
+          readOnly={options.readOnly}
           value={visit[key]}
           aria-invalid={Boolean(errors[key])}
           aria-required={!options.optional}
@@ -201,6 +266,13 @@ export default function CustomerIntake({
                 : undefined
           }
           onChange={(event) => {
+            if (key === "address") {
+              addressRequest.current?.abort();
+              addressRequest.current = null;
+              setAddressLoading(false);
+              setAddressOptions(null);
+              setAddressError("");
+            }
             setVisit({ ...visit, [key]: event.target.value });
             setErrors({ ...errors, [key]: undefined });
             setRequestError("");
@@ -518,9 +590,15 @@ export default function CustomerIntake({
                         id="visit-workTypeId"
                         name="workTypeId"
                         value={visit.workTypeId}
-                        onChange={(e) =>
-                          setVisit({ ...visit, workTypeId: e.target.value })
+                        aria-invalid={Boolean(errors.workTypeId)}
+                        aria-describedby={
+                          errors.workTypeId ? "workTypeId-error" : undefined
                         }
+                        onChange={(e) => {
+                          setVisit({ ...visit, workTypeId: e.target.value });
+                          setErrors({ ...errors, workTypeId: undefined });
+                          setRequestError("");
+                        }}
                       >
                         <option value="">잘 모르겠어요 · 선택 안 함</option>
                         {business.workTypes.map((t) => (
@@ -529,6 +607,11 @@ export default function CustomerIntake({
                           </option>
                         ))}
                       </select>
+                      {errors.workTypeId && (
+                        <p id="workTypeId-error" className={styles.error}>
+                          {errors.workTypeId}
+                        </p>
+                      )}
                     </div>
                   </fieldset>
                   <fieldset className={styles.group} disabled={pending}>
@@ -537,8 +620,50 @@ export default function CustomerIntake({
                       autoComplete: "address-line1",
                       placeholder: "도로명과 건물번호 입력",
                       maxLength: 200,
-                      hint: "서비스 가능 지역은 서버 연결 후 확인해요.",
+                      readOnly: addressReadOnly,
+                      hint:
+                        addressHint ??
+                        "서비스 가능 지역은 서버 연결 후 확인해요.",
                     })}
+                    {onSearchAddresses && (
+                      <div>
+                        <button
+                          type="button"
+                          className={styles.textButton}
+                          disabled={addressLoading}
+                          onClick={() => void findAddress()}
+                        >
+                          {addressLoading ? "주소 검색 중…" : "주소 검색"}
+                        </button>
+                        {addressError && (
+                          <p className={styles.error} role="alert">
+                            {addressError}
+                          </p>
+                        )}
+                        {addressOptions?.length === 0 && (
+                          <p className={styles.hint} role="status">
+                            검색 결과가 없어요. 도로명과 건물번호를 확인해
+                            주세요.
+                          </p>
+                        )}
+                        {addressOptions?.map((option, index) => (
+                          <button
+                            type="button"
+                            className={styles.textButton}
+                            key={`${option.address}-${index}`}
+                            onClick={() => {
+                              onSelectAddress?.(option);
+                              setVisit({ ...visit, address: option.address });
+                              setErrors({ ...errors, address: undefined });
+                              setAddressOptions(null);
+                              setRequestError("");
+                            }}
+                          >
+                            {option.address}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {field("addressDetail", "상세 주소", {
                       optional: true,
                       autoComplete: "address-line2",
