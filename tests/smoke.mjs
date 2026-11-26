@@ -53,23 +53,26 @@ try {
   assert.match(home, /<html[^>]*lang="ko"/);
   assert.match(home, /name="viewport"/);
   assert.match(home, /href="\/manifest.webmanifest"/);
-  for (const [role, title] of Object.entries({
-    customer: "고객 문의",
-    admin: "운영 관리",
-  })) {
-    assert.ok(home.includes(`href="/${role}"`), `${role} 진입 링크 누락`);
-    const response = await fetch(`${base}/${role}`);
+  {
+    assert.ok(home.includes('href="/customer"'), "customer 진입 링크 누락");
+    const response = await fetch(`${base}/customer`);
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes(title), `${role} 화면 구분 실패`);
-    assert.ok(html.includes('href="/"'), `${role} 홈 복귀 링크 누락`);
+    assert.ok(html.includes("고객 문의"), "customer 화면 구분 실패");
+    assert.ok(html.includes('href="/"'), "customer 홈 복귀 링크 누락");
     assert.ok(
-      html.includes(
-        role === "customer"
-          ? "후속 작업에서 연결합니다"
-          : "구현되지 않았습니다",
-      ),
+      html.includes("후속 작업에서 연결합니다"),
       "미구현 기능을 제공 중으로 표시함",
+    );
+  }
+  // 운영 관리는 FE-19에서 실제 화면(운영자 로그인 필요)으로 바뀌어 화면 진입만 확인한다.
+  assert.ok(home.includes('href="/admin"'), "admin 진입 링크 누락");
+  for (const path of ["/admin", "/admin/login"]) {
+    const response = await fetch(`${base}${path}`);
+    assert.equal(response.status, 200, `${path} 진입 실패`);
+    assert.ok(
+      (await response.text()).includes("운영 관리"),
+      `${path} 화면 구분 실패`,
     );
   }
   // 사장님 홈은 FE-06에서 실제 화면으로 바뀌어 미구현 문구 대신 화면 진입만 확인한다.

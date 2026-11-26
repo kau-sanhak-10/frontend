@@ -1,0 +1,143 @@
+/* 운영 화면 전용 보조 스타일 (FE-19). 기본 모양은 사장님 화면 스타일을 함께 씁니다. */
+
+.adminBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #242527;
+  color: #ffffff;
+  font-size: 0.8125rem;
+}
+
+.adminBar button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #56595c;
+  border-radius: 8px;
+  background: transparent;
+  color: #ffffff;
+  font: inherit;
+}
+
+.roleTag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #ff9200;
+  color: #242527;
+  font-weight: 700;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.select,
+.textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #242527;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.select {
+  height: 48px;
+  padding: 0 12px;
+}
+
+.filters .select {
+  flex: 1;
+  min-width: 140px;
+}
+
+.textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.select:focus-visible,
+.textarea:focus-visible {
+  outline: 3px solid #b35300;
+  outline-offset: 1px;
+}
+
+.statusPair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badgeError {
+  background: #fdecec;
+  color: #b60c0c;
+}
+
+.badgeMuted {
+  background: #eeeeef;
+  color: #56595c;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #ffd7a3;
+  border-radius: 12px;
+  background: #fff7eb;
+}
+
+.okBox,
+.failBox {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+
+.okBox {
+  background: #e9f7ef;
+  color: #1a7f43;
+}
+
+.failBox {
+  background: #fdecec;
+  color: #b60c0c;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.9375rem;
+}
+
+.checkRow input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: #ff9200;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #56595c;
+  font-size: 0.875rem;
+}
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
