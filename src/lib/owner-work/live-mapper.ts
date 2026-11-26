@@ -30,6 +30,7 @@ export type ServerNotification = {
   createdAt: string;
   /** 안 읽었으면 null */
   readAt: string | null;
+  safety?: boolean;
 };
 
 /** 목록 공통 형식 (page는 0부터) */
@@ -108,8 +109,10 @@ export function mapNotification(n: ServerNotification): OwnerNotification {
     // 서버가 로그인한 업체 알림만 돌려줘서 화면에서는 업체를 따로 구분하지 않습니다.
     businessId: "",
     event: kindOf(n.eventType),
-    // 서버 알림에는 아직 안전 구분 값이 없어요. (BE-14에 요청 예정)
-    safety: false,
+    safety:
+      n.refType === "INQUIRY" &&
+      n.eventType === "NEEDS_CHECK" &&
+      n.safety === true,
     refType,
     refId: String(n.refId),
     title: notificationTitle(n.eventType),

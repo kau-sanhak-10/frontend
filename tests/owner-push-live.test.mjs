@@ -24,7 +24,10 @@ import {
   deviceLabel,
   pushStateOf,
 } from "../src/lib/owner-work/push.ts";
-import { NOTIFICATION_KIND_LABEL } from "../src/lib/owner-work/rules.ts";
+import {
+  NOTIFICATION_KIND_LABEL,
+  splitNotifications,
+} from "../src/lib/owner-work/rules.ts";
 
 const item = (over = {}) => ({
   notificationId: 31,
@@ -99,6 +102,18 @@ test("수신 설정: 서버가 빠뜨린 종류는 켜짐, 저장할 때는 4종
     "NEW_RESERVATION",
   ]);
   assert.equal(body.CANCEL, false);
+});
+
+test("같은 문의라도 서버가 안전 확인으로 표시한 요청만 안전 그룹에 둔다", () => {
+  const regular = mapNotification(item({ notificationId: 30 }));
+  const safety = mapNotification(item({ safety: true }));
+  const reservation = mapNotification(
+    item({ notificationId: 29, refType: "RESERVATION", safety: true }),
+  );
+  assert.deepEqual(splitNotifications([regular, safety, reservation]), {
+    safety: [safety],
+    general: [regular, reservation],
+  });
 });
 
 // ── 서버 요청 ─────────────────────────────
