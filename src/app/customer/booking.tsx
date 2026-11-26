@@ -26,6 +26,7 @@ type Props = {
     slot: VisitSlot,
     key: string,
     signal: AbortSignal,
+    rechecking: boolean,
   ) => Promise<BookingResult>;
   phoneVerified: boolean;
   onVerify?: () => Promise<boolean>;
@@ -134,7 +135,7 @@ export default function CustomerBooking({
     const key = requestKey.current;
     void act(async (signal) => {
       const result = readBookingResult(
-        await onConfirm(candidate, key, signal),
+        await onConfirm(candidate, key, signal, uncertain),
         true,
       );
       if (!signal.aborted) {
@@ -144,7 +145,8 @@ export default function CustomerBooking({
     }, true);
   }
   const blocked =
-    issue && ["owner", "expired", "existing"].includes(issue.kind);
+    issue &&
+    ["owner", "expired", "existing", "collecting"].includes(issue.kind);
   const failedNotifications = confirmed?.notifications?.some(
     (n) => n.sendStatus === "FAILED",
   );

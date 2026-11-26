@@ -67,18 +67,8 @@ export default function CustomerVisit({
     [inquiryId, inquiryToken],
   );
   const loadBooking = useCallback(
-    async (from: string, signal: AbortSignal) => {
-      const latest = await getCustomerVisitInfo(
-        inquiryId,
-        inquiryToken,
-        signal,
-      );
-      if (latest.reservationId)
-        throw new ApiError(409, "RESERVATION_ALREADY_EXISTS", "", {
-          reservationId: latest.reservationId,
-        });
-      return getAvailableVisits(inquiryId, inquiryToken, from, signal);
-    },
+    (from: string, signal: AbortSignal) =>
+      getAvailableVisits(inquiryId, inquiryToken, from, signal),
     [inquiryId, inquiryToken],
   );
   useEffect(() => () => request.current?.abort(), []);
@@ -228,8 +218,15 @@ export default function CustomerVisit({
           setAttempt((value) => value + 1);
         }}
         onLoad={loadBooking}
-        onConfirm={(slot, key, signal) =>
-          confirmCustomerVisit(inquiryId, inquiryToken, slot, key, signal)
+        onConfirm={(slot, key, signal, rechecking) =>
+          confirmCustomerVisit(
+            inquiryId,
+            inquiryToken,
+            slot,
+            key,
+            signal,
+            rechecking,
+          )
         }
         onExisting={(signal, id) =>
           getCustomerReservation(
@@ -270,6 +267,20 @@ export default function CustomerVisit({
           </button>
         </div>
       )}
+      {bookingEnabled &&
+        snapshot?.bookingStage === "collecting" &&
+        !snapshot.reservationId && (
+          <div className={styles.preview} role="status">
+            접수 내용을 확인 중이에요. 상담에서 최신 안내를 확인해 주세요.
+            <button
+              type="button"
+              className={styles.textButton}
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              예약 단계 다시 확인
+            </button>
+          </div>
+        )}
       <CustomerInquiryReview
         inquiryId={inquiryId}
         inquiryToken={inquiryToken}

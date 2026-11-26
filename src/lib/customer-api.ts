@@ -61,6 +61,7 @@ async function readInquiry(
     version: number;
     status?: unknown;
     handlerMode?: unknown;
+    nextAction?: unknown;
     visitInfo?: unknown;
     phoneVerified?: unknown;
     consents?: unknown;
@@ -153,17 +154,21 @@ export async function getCustomerVisitInfo(
     Math.abs(value.lng) <= 180
       ? { lat: value.lat, lng: value.lng }
       : null;
-  const schedulingStage =
+  const openStage =
     data.status === "COLLECTING" || data.status === "SCHEDULING";
   return {
     version: data.version,
     bookingStage:
       data.status === "OWNER_CHECK" ||
-      (schedulingStage && data.handlerMode === "OWNER")
+      (openStage && data.handlerMode === "OWNER")
         ? ("owner-review" as const)
-        : schedulingStage && data.handlerMode === "AI"
+        : data.status === "SCHEDULING" &&
+            data.handlerMode === "AI" &&
+            data.nextAction === "CHECK_SCHEDULE"
           ? ("candidate" as const)
-          : null,
+          : openStage && data.handlerMode === "AI"
+            ? ("collecting" as const)
+            : null,
     phoneVerified: data.phoneVerified === true,
     photoConsent:
       Array.isArray(data.consents) && data.consents.includes("PHOTO"),

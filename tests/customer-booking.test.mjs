@@ -40,9 +40,14 @@ const key = "a1234567-1234-4123-8123-123456789abc";
 afterEach(() => mock.restoreAll());
 function reply(value, status = 200, code = "OK") {
   process.env.NEXT_PUBLIC_API_BASE_URL = "https://api.example.test";
-  return mock.method(globalThis, "fetch", async () =>
+  return mock.method(globalThis, "fetch", async (url) =>
     Response.json(
-      { success: status < 400, code, message: "", result: value },
+      {
+        success: status < 400,
+        code,
+        message: "",
+        result: typeof value === "function" ? value(url) : value,
+      },
       { status },
     ),
   );
@@ -91,23 +96,40 @@ test("확정된 서버 응답만 확정으로 읽고 알림 실패를 예약 실
     assert.throws(() => readConfirmedVisit(data));
 });
 test("고객의 시간 선택과 최종 확정은 별도 API이며 같은 요청 식별자를 재사용한다", async () => {
-  let call = reply(available);
+  const ready = {
+    inquiryId: 10,
+    version: 3,
+    status: "SCHEDULING",
+    handlerMode: "AI",
+    nextAction: "CHECK_SCHEDULE",
+    visitInfo: {
+      name: null,
+      phone: "01000000000",
+      address: "테스트 주소",
+      addressDetail: null,
+      lat: 37.5,
+      lng: 127,
+      accessNote: null,
+      workCategory: null,
+    },
+  };
+  let call = reply((url) => (url.pathname.endsWith("/10") ? ready : available));
   await getAvailableVisits(10, "inq_private", "2026-11-20");
   assert.equal(
-    call.mock.calls[0].arguments[0].pathname,
+    call.mock.calls[1].arguments[0].pathname,
     "/api/v1/customer/inquiries/10/available-slots",
   );
   assert.equal(
-    call.mock.calls[0].arguments[0].search,
+    call.mock.calls[1].arguments[0].search,
     "?from=2026-11-20&days=3",
   );
   mock.restoreAll();
-  call = reply(confirmed);
+  call = reply((url) => (url.pathname.endsWith("/10") ? ready : confirmed));
   for (let i = 0; i < 2; i++)
     await confirmCustomerVisit(10, "inq_private", slot, key);
   for (const {
     arguments: [, options],
-  } of call.mock.calls) {
+  } of call.mock.calls.filter((call) => call.arguments[1].method === "POST")) {
     assert.equal(new Headers(options.headers).get("Idempotency-Key"), key);
     assert.equal(
       new Headers(options.headers).get("Authorization"),
@@ -115,6 +137,7 @@ test("고객의 시간 선택과 최종 확정은 별도 API이며 같은 요청
     );
     assert.deepEqual(JSON.parse(options.body), { startAt: slot.startAt });
   }
+  assert.equal(call.mock.callCount(), 4);
 });
 test("잘못된 문의·시간·식별자는 서버로 전송하지 않는다", async () => {
   const call = reply(available);

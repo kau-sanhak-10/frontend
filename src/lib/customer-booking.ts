@@ -136,7 +136,18 @@ const ownerReasons: Record<string, string> = {
   OUT_OF_SERVICE_AREA: "방문 가능 지역인지 업체의 확인이 필요해요.",
   TRAVEL_TIME_UNAVAILABLE: "이동시간을 확인한 뒤 방문시간을 안내해 드려요.",
 };
+export class BookingStateChangedError extends Error {
+  constructor() {
+    super(
+      "접수 내용이 바뀌었거나 아직 확인 중이에요. 상담에서 최신 안내를 확인해 주세요.",
+    );
+    this.name = "BookingStateChangedError";
+  }
+}
+
 export function bookingIssue(error: unknown) {
+  if (error instanceof BookingStateChangedError)
+    return { kind: "collecting", message: error.message } as const;
   if (error instanceof ApiError) {
     if (error.code === "INQUIRY_CLOSED")
       return {

@@ -1,5 +1,7 @@
-import { requestApi } from "./api.ts";
+import { ApiError, requestApi } from "./api.ts";
+import { getCustomerVisitInfo } from "./customer-api.ts";
 import {
+  BookingStateChangedError,
   isVisitSlot,
   readAvailableVisits,
   readBookingResult,
@@ -16,6 +18,35 @@ function access(id: number, token: string) {
   };
 }
 
+async function checkBookingStage(
+  id: number,
+  token: string,
+  signal?: AbortSignal,
+  rechecking = false,
+) {
+  const timeout = AbortSignal.timeout(8000);
+  const latest = await getCustomerVisitInfo(
+    id,
+    token,
+    signal ? AbortSignal.any([signal, timeout]) : timeout,
+  );
+  if (latest.reservationId) {
+    // 결과를 받지 못한 확정 요청은 같은 키로 서버 결과를 재확인할 수 있어야 한다.
+    if (rechecking) return;
+    throw new ApiError(409, "RESERVATION_ALREADY_EXISTS", "", {
+      reservationId: latest.reservationId,
+    });
+  }
+  if (latest.bookingStage === "owner-review")
+    throw new ApiError(409, "OWNER_HANDLING", "");
+  if (
+    latest.bookingStage !== "candidate" ||
+    !latest.coordinates ||
+    !latest.visit.phone
+  )
+    throw new BookingStateChangedError();
+}
+
 // DS-04 5.2 계약. 화면 예시에서 호출하지 않으며 FE-14에서 실제 서버와 통합 검증한다.
 export async function getAvailableVisits(
   id: number,
@@ -30,6 +61,7 @@ export async function getAvailableVisits(
     new Date(`${from}T00:00:00Z`).toISOString().slice(0, 10) !== from
   )
     throw new Error("조회할 날짜를 확인해 주세요.");
+  await checkBookingStage(id, token, signal);
   return readAvailableVisits(
     await requestApi(`${path}/available-slots?from=${from}&days=3`, {
       headers,
@@ -44,6 +76,7 @@ export async function confirmCustomerVisit(
   selected: VisitSlot,
   idempotencyKey: string,
   signal?: AbortSignal,
+  rechecking = false,
 ) {
   const { path, headers } = access(id, token);
   if (
@@ -53,6 +86,7 @@ export async function confirmCustomerVisit(
     )
   )
     throw new Error("예약 요청 식별자를 확인해 주세요.");
+  await checkBookingStage(id, token, signal, rechecking);
   // 선택값만으로 예약 확정 여부를 판단하지 않는다. 같은 요청 재시도에는 같은 키를 쓴다.
   return readBookingResult(
     await requestApi(`${path}/reservations`, {
