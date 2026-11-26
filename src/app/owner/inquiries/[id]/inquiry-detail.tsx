@@ -269,7 +269,9 @@ function SummaryRow({
       </dd>
       {field.history?.length ? (
         <dd className={styles.fieldNote}>
-          사장님이 고친 값이에요 · 이전 값:{" "}
+          {field.source === "OWNER" && !unconfirmed
+            ? "사장님이 고친 값이에요 · 이전 값:"
+            : "이전 값:"}{" "}
           {field.history.at(-1)?.value ?? "미확인"}
         </dd>
       ) : null}
