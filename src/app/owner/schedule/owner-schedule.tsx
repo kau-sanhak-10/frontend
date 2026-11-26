@@ -85,11 +85,11 @@ type ScheduleRows =
   | { kind: "mock"; inquiries: PreviewRows }
   | { kind: "live"; from: string; items: Item[] };
 
-function travelLabel(travel: Item["travel"]) {
+function travelLabel(travel: Item["travel"], timeline = false) {
   if (!travel || travel === "unknown") return "이동시간 확인 필요";
   const duration = `예상 이동 ${travel.minutes}분`;
   if (travel.distance !== undefined)
-    return `${duration} · ${travel.distance}km (예시)`;
+    return `${timeline ? `이전 현장에서 약 ${travel.minutes}분` : duration} · ${travel.distance}km (예시)`;
   return travel.conflict ? `${duration} · 이동시간 부족` : duration;
 }
 
@@ -456,7 +456,7 @@ function Schedule({ source }: { source: InquirySource }) {
                       {item.travel && item.status !== "취소" ? (
                         <p className={styles.travel}>
                           <Icon name="pin" />
-                          {travelLabel(item.travel)}
+                          {travelLabel(item.travel, true)}
                         </p>
                       ) : null}
                       <button
