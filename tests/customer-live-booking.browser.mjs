@@ -26,6 +26,7 @@ let purpose,
   mismatch = true;
 let version = 3;
 let ownerReview = false;
+let collecting = false;
 let recoveryListChanged = false;
 let slotReads = 0;
 let visit = {
@@ -253,8 +254,20 @@ await page.route(`${api}/**`, async (route) => {
     return respond({
       inquiryId: 10,
       version,
-      status: ownerReview ? "OWNER_CHECK" : booked ? "BOOKED" : "SCHEDULING",
+      status: ownerReview
+        ? "OWNER_CHECK"
+        : booked
+          ? "BOOKED"
+          : collecting
+            ? "COLLECTING"
+            : "SCHEDULING",
       handlerMode: ownerReview ? "OWNER" : "AI",
+      nextAction:
+        ownerReview || booked
+          ? null
+          : collecting
+            ? "ASK_MORE_INFO"
+            : "CHECK_SCHEDULE",
       phoneVerified: verified,
       visitInfo: visit,
       consents: [],
@@ -289,6 +302,18 @@ try {
   await click("테스트 방문 주소");
   await click("접수 내용 확인");
   await seen("방문정보가 저장됐어요");
+  collecting = true;
+  await click("상담으로 돌아가기");
+  await click("접수 내용·방문정보 확인");
+  await seen("접수 내용을 확인 중이에요");
+  assert.equal(
+    await page.getByRole("button", { name: "방문시간·예약 확인" }).count(),
+    0,
+  );
+  assert.equal(slotReads, 0);
+  collecting = false;
+  await click("예약 단계 다시 확인");
+  await page.getByRole("button", { name: "방문시간·예약 확인" }).waitFor();
   ownerReview = true;
   await click("상담으로 돌아가기");
   await click("접수 내용·방문정보 확인");
@@ -332,6 +357,19 @@ try {
     fullPage: true,
   });
   await click("인증번호 확인");
+  await seen("인증 완료");
+  ownerReview = true;
+  await click("이 시간으로 예약 확정");
+  await seen("사장님이 직접 확인 중인 문의예요");
+  assert.equal(keys.length, 0);
+  await click("상담으로 돌아가기");
+  await seen("사장님이 방문시간을 확인할 예정이에요.");
+  await click("상담으로 돌아가기");
+  ownerReview = false;
+  await click("접수 내용·방문정보 확인");
+  await click("방문시간·예약 확인");
+  await page.getByRole("radio").first().check();
+  await click("선택한 시간 확인");
   await click("이 시간으로 예약 확정");
   await click("예약 결과 다시 확인");
   await seen("방문 예약이 확정됐어요");
@@ -387,7 +425,7 @@ try {
   assert.equal(keys.length, 2);
   assert.deepEqual(issues, []);
   console.log(
-    "PASS: owner review hides new booking; existing reservation stays readable; booking, SMS errors, retry, lookup, and recovery.",
+    "PASS: collecting blocks booking; stage reload enables selection; owner handoff after selection blocks confirmation; existing reservation, SMS errors, retry, lookup, and recovery.",
   );
 } finally {
   await browser.close();
