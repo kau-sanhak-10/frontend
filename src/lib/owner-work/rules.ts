@@ -1,6 +1,7 @@
 // 방문 작업·메모·완료·알림 화면 규칙 (FE-13). 화면은 이 규칙만 보고 표시합니다.
 import type {
   NotificationEvent,
+  NotificationKind,
   NotificationPrefs,
   OwnerNotification,
   Visit,
@@ -121,6 +122,12 @@ export const NOTIFICATION_LABEL: Record<NotificationEvent, string> = {
   NEEDS_CHECK: "확인 필요",
   CHANGE: "예약 변경",
   CANCEL: "예약 취소",
+};
+
+/** 알림 목록 배지 (서버의 처리 결과 등 묶이지 않는 알림은 '알림') */
+export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
+  ...NOTIFICATION_LABEL,
+  OTHER: "알림",
 };
 
 /** 끄면 업무를 놓칠 수 있는 알림 (B-27 ③) */

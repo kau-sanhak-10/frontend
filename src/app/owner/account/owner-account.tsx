@@ -8,6 +8,7 @@ import { useLoad } from "../_components/use-load";
 import styles from "../_components/owner-auth.module.css";
 import { ApiError } from "@/lib/api";
 import { getOwnerMe, logoutOwner, type OwnerMe } from "@/lib/owner-auth/api";
+import { unsubscribeBeforeLogout } from "@/lib/owner-work/push";
 import { formatPhone, maskPhone } from "@/lib/owner-auth/phone";
 import {
   clearSession,
@@ -95,6 +96,8 @@ function LiveAccount({ token }: { token: string }) {
     setBusy(true);
     setError("");
     try {
+      // 같은 기기로 다른 사람이 로그인해도 이전 사장님 알림이 오지 않게 먼저 구독을 지웁니다. (B-27)
+      await unsubscribeBeforeLogout(token);
       await logoutOwner(token);
       clearSession();
       router.replace("/owner/login?reason=logout");

@@ -30,6 +30,7 @@ const FAIL_MESSAGE: Record<string, string> = {
   NOT_ALLOWED: "지금 예약 상태에서는 할 수 없어요.",
   INVALID: "정정 사유를 확인해 주세요.",
   NOT_FOUND: "예약을 찾을 수 없어요.",
+  NOT_STARTED: "방문 시작 시각이 지난 뒤에 완료할 수 있어요.",
 };
 
 const BY_LABEL = { CUSTOMER: "고객", OWNER: "사장님", SYSTEM: "자동" };
@@ -139,7 +140,7 @@ export function VisitCompletion({
               disabled={busy}
               onClick={() =>
                 void run(
-                  () => finishVisit(source, visit.id, visit.version),
+                  () => finishVisit(source, visit),
                   "작업 완료로 기록했어요.",
                 )
               }
@@ -204,7 +205,7 @@ export function VisitCompletion({
               disabled={busy || Boolean(reasonInvalid)}
               onClick={() =>
                 void run(
-                  () => undoCompletion(source, visit.id, visit.version, reason),
+                  () => undoCompletion(source, visit, reason),
                   "완료를 정정했어요. 예약 확정 상태로 돌아갔어요.",
                 )
               }
